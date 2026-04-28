@@ -1,0 +1,47 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: scouter-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  dagster:
+    build: .
+    container_name: scouter-dagster
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./dbt:/app/dbt
+      - ./pipeline:/app/pipeline
+    environment:
+      - DAGSTER_HOME=/app/dagster_home
+      - DUCKDB_PATH=/app/data/scouter.duckdb
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+    command: uv run dagster-webserver -h 0.0.0.0 -p 3000
+
+  app:
+    build: .
+    container_name: scouter-app
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./app:/app/app
+    environment:
+      - DUCKDB_PATH=/app/data/scouter.duckdb
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=codellama
+    depends_on:
+      - ollama
+      - dagster
+    command: uv run streamlit run app/main.py --server.port=8501 --server.address=0.0.0.0
+
+volumes:
+  ollama_data:

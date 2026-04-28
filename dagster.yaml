@@ -1,0 +1,6 @@
+# Dagster instance configuration
+# SQLite storage — local dev only, mirrors data-engineering reference implementation
+
+storage:
+  sqlite:
+    base_dir: "${DAGSTER_HOME}"

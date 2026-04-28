@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# uv
+.uv/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Data (large files — keep .gitkeep)
+data/*.csv
+data/*.parquet
+data/*.duckdb
+data/*.db
+!data/.gitkeep
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Dagster
+$dagster_home/
+dagster_home/
+.dagster/
+
+# Env
+.env
+.env.local
+
+# IDE
+.cursor/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
