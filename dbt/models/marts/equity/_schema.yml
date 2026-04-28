@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: mart_equity_performance
+    description: >
+      Primary equity analysis mart. Grain: ticker + date.
+      Pre-joins price, returns, volatility, and company metadata.
+      Designed for LLM queries about individual stock performance.
+
+  - name: mart_equity_screener
+    description: >
+      Latest snapshot per ticker with fundamentals and risk metrics.
+      Grain: ticker (one row, most recent data).
+      Designed for screening queries: "show me large-cap tech stocks with low volatility".

@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: int_daily_returns
+    description: >
+      Daily prices enriched with return calculations.
+      Grain: ticker + date.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: daily_return
+        description: (close - prev_close) / prev_close. Null on first trading day per ticker.
+
+  - name: int_volatility
+    description: >
+      Rolling volatility metrics per ticker.
+      Grain: ticker + date.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+
+  - name: int_sector_aggregates
+    description: >
+      Daily sector-level price and volume aggregates.
+      Grain: sector + date.
+    columns:
+      - name: sector
+        tests: [not_null]
+      - name: date
+        tests: [not_null]

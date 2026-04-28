@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: mart_risk_profile
+    description: >
+      Comprehensive risk metrics per ticker (latest snapshot).
+      Grain: ticker.
+      Designed for risk-focused queries about individual stocks or portfolios.
+      Example: "Show me the highest volatility stocks in healthcare."
+
+  - name: mart_drawdown
+    description: >
+      Daily drawdown time series per ticker.
+      Grain: ticker + date.
+      Designed for historical drawdown analysis.
+      Example: "How deep was TSLA's worst drawdown in the last 2 years?"
