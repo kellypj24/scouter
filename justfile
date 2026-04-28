@@ -43,6 +43,10 @@ dbt:
 dbt-test:
     uv run dbt test --project-dir dbt/ --profiles-dir dbt/
 
+# Generate dbt docs artifacts (manifest.json + catalog.json) for LLM schema context
+dbt-docs:
+    uv run dbt docs generate --project-dir dbt/ --profiles-dir dbt/
+
 # Clean build artifacts
 clean:
     find . -type d -name __pycache__ -exec rm -rf {} +
