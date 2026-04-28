@@ -8,7 +8,7 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 
 **Developer Context**: Intermediate Python, advanced SQL/dbt, building toward production-grade agentic harness.
 
-**Stack**: Python 3.13, DuckDB, dbt-duckdb, Dagster, Ollama (Code Llama), Plotly, Streamlit (PoC), uv, Docker
+**Stack**: Python 3.13, DuckDB, dbt-duckdb, Dagster, Ollama/Claude/Bedrock (pluggable), Plotly, Streamlit (PoC), uv, Docker
 
 ## Current Status
 
@@ -61,11 +61,12 @@ Two distinct runtimes — keep them separate:
 5. **Strict Layer Separation** — `src/agent/` has no UI code. `app/` has no agent logic. `pipeline/` has no LLM calls. `src/data/` has no LLM calls.
 
 ### Agent
-6. **Always Async** — All Ollama calls MUST be async (`async/await`). Never block on LLM.
-7. **Always Have Fallbacks** — Every agent action needs a rule-based fallback. System must work if Ollama is down.
-8. **Token Budget: 4096 Hard Limit** — Validate before sending. Count tokens, truncate if needed, cache responses.
-9. **Structured Responses Only** — All LLM output validated via Pydantic before use. Never trust raw strings.
-10. **Artifact Chain** — Each response is a list of `NarrativeBlock` objects. Never a raw string response.
+6. **Provider Abstraction is Sacred** — Agent code ONLY imports `LLMProvider` from `providers/base.py`. Never import `OllamaProvider`, `AnthropicProvider`, or `BedrockProvider` directly in agent code. Swap providers via `SCOUTER_LLM_PROVIDER` env var.
+7. **Always Async** — All LLM provider calls MUST be async (`async/await`). Never block on LLM.
+8. **Always Have Fallbacks** — Every agent action needs a rule-based fallback. System must work if the LLM provider is unavailable.
+9. **Token Budget: 4096 Hard Limit** — Validate before sending. Count tokens, truncate if needed, cache responses.
+10. **Structured Responses Only** — All LLM output validated via Pydantic before use. Never trust raw strings.
+11. **Artifact Chain** — Each response is a list of `NarrativeBlock` objects. Never a raw string response.
 
 ### Data
 11. **DuckDB is the Source of Truth** — All queries run against DuckDB. No in-memory pandas pipelines.
@@ -86,7 +87,11 @@ src/
     orchestrator.py     # Decomposes questions, manages multi-block narrative flow
     query_agent.py      # SQL generation + DuckDB execution
     narrative_agent.py  # Prose generation + visualization decisions
-    ollama.py           # Async Ollama client (retry, fallback, timeout)
+    providers/
+      base.py           # LLMProvider protocol + get_provider() factory + error types
+      ollama.py         # Ollama (local PoC) — routes SQL→codellama, prose→llama3.2
+      anthropic.py      # Claude API — tool_use for structured output
+      bedrock.py        # AWS Bedrock — converse API, tool_use for structured output
     prompts/
       sql.py            # SQL generation prompt templates
       narrative.py      # Narrative/interpretation prompt templates
