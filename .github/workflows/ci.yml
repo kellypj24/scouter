@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, "phase/*"]
+    branches: [main]
 
 jobs:
   lint:
