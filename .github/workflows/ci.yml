@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, "phase/*"]
+
+jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Ruff lint
+        run: uv run ruff check src/ pipeline/ app/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ pipeline/ app/ tests/
+
+      - name: Mypy type check
+        run: uv run mypy src/ pipeline/
+
+  test:
+    name: Targeted Tests + Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Determine tests to run
+        id: resolve-tests
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          RUN_FULL=false
+          TEST_FILES=""
+
+          while IFS= read -r file; do
+            case "$file" in
+              # Dependency changes → full suite
+              pyproject.toml|uv.lock)
+                RUN_FULL=true
+                ;;
+
+              # Test files run directly
+              tests/**/*.py)
+                TEST_FILES="$TEST_FILES $file"
+                ;;
+
+              # Agent providers
+              src/agent/providers/base.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_base.py"
+                ;;
+              src/agent/providers/ollama.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_ollama.py"
+                ;;
+              src/agent/providers/anthropic.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_anthropic.py"
+                ;;
+              src/agent/providers/bedrock.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_bedrock.py"
+                ;;
+
+              # Agent harness
+              src/agent/query_agent.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_query_agent.py"
+                ;;
+              src/agent/narrative_agent.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_narrative_agent.py"
+                ;;
+              src/agent/orchestrator.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_orchestrator.py tests/integration/test_orchestrator.py"
+                ;;
+
+              # Data layer
+              src/data/db.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_db.py"
+                ;;
+              src/data/schema.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_schema.py"
+                ;;
+              src/data/loader.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_loader.py tests/integration/test_loader.py"
+                ;;
+
+              # Models
+              src/models/response.py|src/models/agent.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_models.py"
+                ;;
+
+              # Viz
+              src/viz/charts.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_charts.py"
+                ;;
+
+              # Pipeline (Dagster assets)
+              pipeline/assets/ingestion.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_pipeline_ingestion.py"
+                ;;
+              pipeline/assets/transformations.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_pipeline_transformations.py"
+                ;;
+              pipeline/checks/*.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_pipeline_checks.py"
+                ;;
+              pipeline/**/*.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_pipeline_ingestion.py tests/unit/test_pipeline_checks.py"
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$RUN_FULL" = true ]; then
+            TEST_FILES="tests/"
+          else
+            TEST_FILES=$(echo "$TEST_FILES" | tr ' ' '\n' | sort -u | while read -r f; do
+              [ -n "$f" ] && [ -f "$f" ] && echo "$f"
+            done | tr '\n' ' ')
+          fi
+
+          echo "test_files=$TEST_FILES" >> "$GITHUB_OUTPUT"
+          if [ -z "$TEST_FILES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No matching test files — skipping tests."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will run: $TEST_FILES"
+          fi
+
+      - name: Run targeted tests
+        if: steps.resolve-tests.outputs.skip != 'true'
+        run: |
+          uv run pytest ${{ steps.resolve-tests.outputs.test_files }} \
+            -v --tb=short \
+            --cov=src --cov=pipeline \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=80
+
+      - name: Coverage summary
+        if: steps.resolve-tests.outputs.skip != 'true'
+        run: |
+          echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          uv run coverage report --skip-covered --sort=cover >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Post coverage comment on PR
+        if: steps.resolve-tests.outputs.skip != 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage = fs.readFileSync('coverage.xml', 'utf8');
+            const match = coverage.match(/line-rate="([\d.]+)"/);
+            const pct = match ? (parseFloat(match[1]) * 100).toFixed(1) : 'N/A';
+            const bar = Math.round(parseFloat(pct) / 5);
+            const filled = '█'.repeat(bar);
+            const empty = '░'.repeat(20 - bar);
+            const body = `## Coverage: ${pct}%\n\`${filled}${empty}\` ${pct}% / 100%\n\n> Target: 100% — currently enforcing ≥ 80%. Raise \`--cov-fail-under\` in \`pyproject.toml\` as coverage grows.`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
