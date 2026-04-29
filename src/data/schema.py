@@ -72,9 +72,9 @@ class SchemaContext:
 
     def to_prompt(self, domains: list[str] | None = None) -> str:
         """Return schema prompt string, optionally filtered to specific domains."""
-        targets = self.models if domains is None else [
-            m for m in self.models if m.domain in domains
-        ]
+        targets = (
+            self.models if domains is None else [m for m in self.models if m.domain in domains]
+        )
         if not targets:
             return "No schema available."
         sections: list[str] = []
@@ -120,12 +120,14 @@ def _load_from_artifacts() -> SchemaContext | None:
             for col_name, col_info in cat_node["columns"].items()
         ]
 
-        models.append(ModelSchema(
-            name=cat_node["metadata"]["name"],
-            domain=domain,
-            description=man_node.get("description", ""),
-            columns=columns,
-        ))
+        models.append(
+            ModelSchema(
+                name=cat_node["metadata"]["name"],
+                domain=domain,
+                description=man_node.get("description", ""),
+                columns=columns,
+            )
+        )
 
     logger.info("Loaded schema context from dbt artifacts: %d models", len(models))
     return SchemaContext(models=models)
@@ -164,8 +166,7 @@ def load_schema_context(conn: duckdb.DuckDBPyConnection | None = None) -> Schema
     global _context
     if _context is None:
         _context = _load_from_artifacts() or (
-            _load_from_duckdb(conn) if conn is not None
-            else SchemaContext(models=[])
+            _load_from_duckdb(conn) if conn is not None else SchemaContext(models=[])
         )
     return _context
 

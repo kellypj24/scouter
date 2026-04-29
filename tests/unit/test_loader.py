@@ -25,90 +25,96 @@ def conn():
 
 @pytest.fixture
 def companies_df():
-    return pd.DataFrame([
-        {
-            "symbol": "AAPL",
-            "long_name": "Apple Inc.",
-            "sector": "Information Technology",
-            "industry": "Technology Hardware",
-            "exchange": "NASDAQ",
-            "market_cap": 3_000_000_000_000.0,
-            "last_updated": datetime(2026, 1, 1),
-        },
-        {
-            "symbol": "MSFT",
-            "long_name": "Microsoft Corporation",
-            "sector": "Information Technology",
-            "industry": "Systems Software",
-            "exchange": "NASDAQ",
-            "market_cap": 2_500_000_000_000.0,
-            "last_updated": datetime(2026, 1, 1),
-        },
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "long_name": "Apple Inc.",
+                "sector": "Information Technology",
+                "industry": "Technology Hardware",
+                "exchange": "NASDAQ",
+                "market_cap": 3_000_000_000_000.0,
+                "last_updated": datetime(2026, 1, 1),
+            },
+            {
+                "symbol": "MSFT",
+                "long_name": "Microsoft Corporation",
+                "sector": "Information Technology",
+                "industry": "Systems Software",
+                "exchange": "NASDAQ",
+                "market_cap": 2_500_000_000_000.0,
+                "last_updated": datetime(2026, 1, 1),
+            },
+        ]
+    )
 
 
 @pytest.fixture
 def prices_df():
-    return pd.DataFrame([
-        {
-            "symbol": "AAPL",
-            "date": datetime(2026, 1, 2).date(),
-            "open": 185.0,
-            "high": 188.0,
-            "low": 184.0,
-            "close": 187.0,
-            "volume": 50_000_000,
-            "last_updated": datetime(2026, 1, 2),
-        },
-        {
-            "symbol": "AAPL",
-            "date": datetime(2026, 1, 3).date(),
-            "open": 187.0,
-            "high": 190.0,
-            "low": 186.0,
-            "close": 189.0,
-            "volume": 45_000_000,
-            "last_updated": datetime(2026, 1, 3),
-        },
-        {
-            "symbol": "MSFT",
-            "date": datetime(2026, 1, 2).date(),
-            "open": 375.0,
-            "high": 380.0,
-            "low": 373.0,
-            "close": 378.0,
-            "volume": 30_000_000,
-            "last_updated": datetime(2026, 1, 2),
-        },
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "date": datetime(2026, 1, 2).date(),
+                "open": 185.0,
+                "high": 188.0,
+                "low": 184.0,
+                "close": 187.0,
+                "volume": 50_000_000,
+                "last_updated": datetime(2026, 1, 2),
+            },
+            {
+                "symbol": "AAPL",
+                "date": datetime(2026, 1, 3).date(),
+                "open": 187.0,
+                "high": 190.0,
+                "low": 186.0,
+                "close": 189.0,
+                "volume": 45_000_000,
+                "last_updated": datetime(2026, 1, 3),
+            },
+            {
+                "symbol": "MSFT",
+                "date": datetime(2026, 1, 2).date(),
+                "open": 375.0,
+                "high": 380.0,
+                "low": 373.0,
+                "close": 378.0,
+                "volume": 30_000_000,
+                "last_updated": datetime(2026, 1, 2),
+            },
+        ]
+    )
 
 
 @pytest.fixture
 def snapshots_df():
-    return pd.DataFrame([
-        {
-            "symbol": "AAPL",
-            "current_price": 187.0,
-            "day_high": 188.0,
-            "day_low": 184.0,
-            "volume": 50_000_000,
-            "market_cap": 3_000_000_000_000.0,
-            "week_52_high": 200.0,
-            "week_52_low": 150.0,
-            "last_updated": datetime(2026, 1, 2),
-        },
-        {
-            "symbol": "MSFT",
-            "current_price": 378.0,
-            "day_high": 380.0,
-            "day_low": 373.0,
-            "volume": 30_000_000,
-            "market_cap": 2_500_000_000_000.0,
-            "week_52_high": 420.0,
-            "week_52_low": 310.0,
-            "last_updated": datetime(2026, 1, 2),
-        },
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "current_price": 187.0,
+                "day_high": 188.0,
+                "day_low": 184.0,
+                "volume": 50_000_000,
+                "market_cap": 3_000_000_000_000.0,
+                "week_52_high": 200.0,
+                "week_52_low": 150.0,
+                "last_updated": datetime(2026, 1, 2),
+            },
+            {
+                "symbol": "MSFT",
+                "current_price": 378.0,
+                "day_high": 380.0,
+                "day_low": 373.0,
+                "volume": 30_000_000,
+                "market_cap": 2_500_000_000_000.0,
+                "week_52_high": 420.0,
+                "week_52_low": 310.0,
+                "last_updated": datetime(2026, 1, 2),
+            },
+        ]
+    )
 
 
 class TestCreateTables:
@@ -130,11 +136,20 @@ class TestCreateTables:
     def test_historical_data_primary_key(self, conn):
         """Duplicate (symbol, date) should be replaced, not duplicated."""
         create_tables(conn)
-        df = pd.DataFrame([{
-            "symbol": "AAPL", "date": "2026-01-02",
-            "open": 185.0, "high": 188.0, "low": 184.0, "close": 187.0,
-            "volume": 50_000_000, "last_updated": datetime(2026, 1, 2),
-        }])
+        pd.DataFrame(
+            [
+                {
+                    "symbol": "AAPL",
+                    "date": "2026-01-02",
+                    "open": 185.0,
+                    "high": 188.0,
+                    "low": 184.0,
+                    "close": 187.0,
+                    "volume": 50_000_000,
+                    "last_updated": datetime(2026, 1, 2),
+                }
+            ]
+        )
         conn.execute("""
             INSERT OR REPLACE INTO historical_data VALUES (
                 'AAPL', '2026-01-02', 185.0, 188.0, 184.0, 187.0, 50000000, NOW()
@@ -170,9 +185,7 @@ class TestIngestCompanies:
         updated = companies_df.copy()
         updated.loc[updated["symbol"] == "AAPL", "long_name"] = "Apple Inc. Updated"
         ingest_companies(conn, updated)
-        name = conn.execute(
-            "SELECT long_name FROM companies WHERE symbol = 'AAPL'"
-        ).fetchone()[0]
+        name = conn.execute("SELECT long_name FROM companies WHERE symbol = 'AAPL'").fetchone()[0]
         assert name == "Apple Inc. Updated"
         total = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
         assert total == 2  # no duplicates
@@ -221,7 +234,9 @@ class TestIngestSnapshots:
 
 
 class TestIngestRawData:
-    def test_orchestrates_all_tables(self, conn, monkeypatch, companies_df, prices_df, snapshots_df):
+    def test_orchestrates_all_tables(
+        self, conn, monkeypatch, companies_df, prices_df, snapshots_df
+    ):
         """ingest_raw_data calls all three ingestion steps and returns counts."""
         monkeypatch.setattr("src.data.loader.get_sp500_constituents", lambda: companies_df)
         monkeypatch.setattr("src.data.loader.fetch_historical_prices", lambda tickers: prices_df)
@@ -233,7 +248,9 @@ class TestIngestRawData:
         assert counts["historical_data"] == 3
         assert counts["market_summaries"] == 2
 
-    def test_returns_dict_with_all_keys(self, conn, monkeypatch, companies_df, prices_df, snapshots_df):
+    def test_returns_dict_with_all_keys(
+        self, conn, monkeypatch, companies_df, prices_df, snapshots_df
+    ):
         monkeypatch.setattr("src.data.loader.get_sp500_constituents", lambda: companies_df)
         monkeypatch.setattr("src.data.loader.fetch_historical_prices", lambda tickers: prices_df)
         monkeypatch.setattr("src.data.loader.fetch_market_snapshots", lambda tickers: snapshots_df)

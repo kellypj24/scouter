@@ -27,6 +27,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.7",
     "mypy>=1.13",
+    "types-requests>=2.33.0.20260408",
 ]
 
 [build-system]

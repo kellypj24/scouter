@@ -3,7 +3,6 @@
 External HTTP and yfinance calls are fully mocked — no network required.
 """
 
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -17,7 +16,6 @@ from src.data.fetcher import (
     fetch_market_snapshots,
     get_sp500_constituents,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helper tests
@@ -49,7 +47,6 @@ class TestSafeFloat:
         assert _safe_float(None) is None
 
     def test_nan(self):
-        import math
         assert _safe_float(float("nan")) is None
 
     def test_non_numeric_string(self):
@@ -77,16 +74,22 @@ class TestSafeInt:
 
 class TestGetSp500Constituents:
     def _mock_response(self):
-        df = pd.DataFrame({
-            "Symbol": ["AAPL", "MSFT", "GOOG"],
-            "Security": ["Apple Inc.", "Microsoft Corporation", "Alphabet Inc."],
-            "GICS Sector": ["Information Technology", "Information Technology", "Communication Services"],
-            "GICS Sub-Industry": ["Tech Hardware", "Systems Software", "Interactive Media"],
-            "Headquarters Location": ["Cupertino, CA", "Redmond, WA", "Mountain View, CA"],
-            "Date added": ["1982-11-30", "1994-06-01", "2006-04-03"],
-            "CIK": [320193, 789019, 1652044],
-            "Founded": [1976, 1975, 1998],
-        })
+        df = pd.DataFrame(
+            {
+                "Symbol": ["AAPL", "MSFT", "GOOG"],
+                "Security": ["Apple Inc.", "Microsoft Corporation", "Alphabet Inc."],
+                "GICS Sector": [
+                    "Information Technology",
+                    "Information Technology",
+                    "Communication Services",
+                ],
+                "GICS Sub-Industry": ["Tech Hardware", "Systems Software", "Interactive Media"],
+                "Headquarters Location": ["Cupertino, CA", "Redmond, WA", "Mountain View, CA"],
+                "Date added": ["1982-11-30", "1994-06-01", "2006-04-03"],
+                "CIK": [320193, 789019, 1652044],
+                "Founded": [1976, 1975, 1998],
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.text = "<html></html>"
         mock_resp.raise_for_status = MagicMock()
@@ -94,8 +97,10 @@ class TestGetSp500Constituents:
 
     def test_returns_dataframe_with_expected_columns(self):
         mock_resp, wiki_df = self._mock_response()
-        with patch("src.data.fetcher.requests.get", return_value=mock_resp), \
-             patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]):
+        with (
+            patch("src.data.fetcher.requests.get", return_value=mock_resp),
+            patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]),
+        ):
             result = get_sp500_constituents()
 
         assert isinstance(result, pd.DataFrame)
@@ -104,21 +109,27 @@ class TestGetSp500Constituents:
     def test_symbols_are_uppercased(self):
         mock_resp, wiki_df = self._mock_response()
         wiki_df["Symbol"] = ["aapl", "msft", "goog"]
-        with patch("src.data.fetcher.requests.get", return_value=mock_resp), \
-             patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]):
+        with (
+            patch("src.data.fetcher.requests.get", return_value=mock_resp),
+            patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]),
+        ):
             result = get_sp500_constituents()
 
         assert all(result["symbol"] == result["symbol"].str.upper())
 
     def test_raises_on_http_failure(self):
-        with patch("src.data.fetcher.requests.get", side_effect=Exception("timeout")):
-            with pytest.raises(RuntimeError, match="Failed to fetch S&P 500"):
-                get_sp500_constituents()
+        with (
+            patch("src.data.fetcher.requests.get", side_effect=Exception("timeout")),
+            pytest.raises(RuntimeError, match="Failed to fetch S&P 500"),
+        ):
+            get_sp500_constituents()
 
     def test_row_count_matches_source(self):
         mock_resp, wiki_df = self._mock_response()
-        with patch("src.data.fetcher.requests.get", return_value=mock_resp), \
-             patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]):
+        with (
+            patch("src.data.fetcher.requests.get", return_value=mock_resp),
+            patch("src.data.fetcher.pd.read_html", return_value=[wiki_df]),
+        ):
             result = get_sp500_constituents()
 
         assert len(result) == 3
@@ -137,6 +148,7 @@ class TestFetchHistoricalPrices:
         because pandas loses names when building a DataFrame from a tuple-keyed dict.
         """
         import itertools
+
         from pandas import MultiIndex
 
         dates = pd.DatetimeIndex(["2026-01-02", "2026-01-03"], name="Date")
@@ -152,8 +164,10 @@ class TestFetchHistoricalPrices:
 
     def test_returns_expected_columns(self):
         download_result = self._make_download_result(["AAPL"])
-        with patch("src.data.fetcher.yf.download", return_value=download_result), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.download", return_value=download_result),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_historical_prices(["AAPL"])
 
         assert set(result.columns) >= {"symbol", "date", "open", "high", "low", "close", "volume"}
@@ -162,15 +176,19 @@ class TestFetchHistoricalPrices:
         download_result = self._make_download_result(["AAPL"])
         # Force close to NaN for second row
         download_result[("Close", "AAPL")] = [None, 101.0]
-        with patch("src.data.fetcher.yf.download", return_value=download_result), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.download", return_value=download_result),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_historical_prices(["AAPL"])
 
         assert result["close"].notna().all()
 
     def test_returns_empty_df_on_all_failures(self):
-        with patch("src.data.fetcher.yf.download", side_effect=Exception("API down")), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.download", side_effect=Exception("API down")),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_historical_prices(["AAPL"])
 
         assert isinstance(result, pd.DataFrame)
@@ -184,8 +202,10 @@ class TestFetchHistoricalPrices:
             call_args.append(len(batch))
             return self._make_download_result(batch[:1])  # return minimal data
 
-        with patch("src.data.fetcher.yf.download", side_effect=mock_download), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.download", side_effect=mock_download),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             fetch_historical_prices(tickers)
 
         # With default batch size 100, should be 3 calls for 250 tickers
@@ -213,12 +233,18 @@ class TestFetchMarketSnapshots:
     def test_returns_expected_columns(self):
         mock_ticker = MagicMock()
         mock_ticker.fast_info = self._mock_fast_info()
-        with patch("src.data.fetcher.yf.Ticker", return_value=mock_ticker), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.Ticker", return_value=mock_ticker),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_market_snapshots(["AAPL"])
 
         assert set(result.columns) >= {
-            "symbol", "current_price", "market_cap", "week_52_high", "week_52_low"
+            "symbol",
+            "current_price",
+            "market_cap",
+            "week_52_high",
+            "week_52_low",
         }
 
     def test_skips_failed_tickers(self):
@@ -229,16 +255,20 @@ class TestFetchMarketSnapshots:
             m.fast_info = self._mock_fast_info()
             return m
 
-        with patch("src.data.fetcher.yf.Ticker", side_effect=side_effect), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.Ticker", side_effect=side_effect),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_market_snapshots(["AAPL", "BAD", "MSFT"])
 
         assert len(result) == 2
         assert "BAD" not in result["symbol"].values
 
     def test_returns_empty_df_when_all_fail(self):
-        with patch("src.data.fetcher.yf.Ticker", side_effect=Exception("down")), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.Ticker", side_effect=Exception("down")),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_market_snapshots(["AAPL"])
 
         assert isinstance(result, pd.DataFrame)
@@ -247,8 +277,10 @@ class TestFetchMarketSnapshots:
     def test_drops_zero_price(self):
         mock_ticker = MagicMock()
         mock_ticker.fast_info = self._mock_fast_info(price=0.0)
-        with patch("src.data.fetcher.yf.Ticker", return_value=mock_ticker), \
-             patch("src.data.fetcher.time.sleep"):
+        with (
+            patch("src.data.fetcher.yf.Ticker", return_value=mock_ticker),
+            patch("src.data.fetcher.time.sleep"),
+        ):
             result = fetch_market_snapshots(["AAPL"])
 
         assert len(result) == 0

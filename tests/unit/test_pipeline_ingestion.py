@@ -1,12 +1,9 @@
 """Unit tests for pipeline/assets/ingestion.py."""
 
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import duckdb
-import pandas as pd
 import pytest
-
 from dagster import build_asset_context
 
 
@@ -28,18 +25,22 @@ class TestRawMarketDataAsset:
         conn.close()
 
     def test_asset_runs_without_error(self, mock_counts, in_memory_conn):
-        with patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn), \
-             patch("pipeline.assets.ingestion.ingest_raw_data", return_value=mock_counts):
+        with (
+            patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn),
+            patch("pipeline.assets.ingestion.ingest_raw_data", return_value=mock_counts),
+        ):
             from pipeline.assets.ingestion import raw_market_data
+
             ctx = build_asset_context()
             raw_market_data(ctx)  # should not raise
 
     def test_asset_logs_row_counts(self, mock_counts, in_memory_conn):
-        log_messages: list[str] = []
-
-        with patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn), \
-             patch("pipeline.assets.ingestion.ingest_raw_data", return_value=mock_counts):
+        with (
+            patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn),
+            patch("pipeline.assets.ingestion.ingest_raw_data", return_value=mock_counts),
+        ):
             from pipeline.assets.ingestion import raw_market_data
+
             ctx = build_asset_context()
             raw_market_data(ctx)
             # Dagster's build_asset_context captures logs — basic smoke test that it ran
@@ -52,9 +53,12 @@ class TestRawMarketDataAsset:
             captured_kwargs.update(kwargs)
             return mock_counts
 
-        with patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn), \
-             patch("pipeline.assets.ingestion.ingest_raw_data", side_effect=capture_ingest):
+        with (
+            patch("pipeline.assets.ingestion.get_connection", return_value=in_memory_conn),
+            patch("pipeline.assets.ingestion.ingest_raw_data", side_effect=capture_ingest),
+        ):
             from pipeline.assets.ingestion import raw_market_data
+
             ctx = build_asset_context()
             raw_market_data(ctx)
 

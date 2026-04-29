@@ -32,8 +32,10 @@ def raw_market_data(context: AssetExecutionContext) -> None:
     for table, rows in counts.items():
         context.log.info("  %s: %s rows upserted", table, f"{rows:,}")
 
-    context.add_output_metadata({
-        "companies": counts["companies"],
-        "historical_data_rows": counts["historical_data"],
-        "market_summaries": counts["market_summaries"],
-    })
+    context.add_output_metadata(
+        {
+            "companies": counts["companies"],
+            "historical_data_rows": counts["historical_data"],
+            "market_summaries": counts["market_summaries"],
+        }
+    )

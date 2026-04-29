@@ -14,6 +14,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from io import StringIO
+from typing import Any
 
 import pandas as pd
 import requests
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 LOOKBACK_YEARS = int(os.getenv("SCOUTER_LOOKBACK_YEARS", "5"))
 BATCH_SIZE_PRICES = int(os.getenv("SCOUTER_BATCH_SIZE_PRICES", "100"))
 BATCH_SIZE_SNAPSHOTS = int(os.getenv("SCOUTER_BATCH_SIZE_SNAPSHOTS", "50"))
-RATE_LIMIT_DELAY = 0.3   # seconds between batch calls
+RATE_LIMIT_DELAY = 0.3  # seconds between batch calls
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
 
@@ -78,16 +79,18 @@ def get_sp500_constituents() -> pd.DataFrame:
     raw = tables[0]
 
     # Wikipedia columns: Symbol, Security, GICS Sector, GICS Sub-Industry, ...
-    constituents = pd.DataFrame({
-        "symbol": raw["Symbol"].str.upper().str.strip(),
-        "long_name": raw["Security"],
-        "sector": raw["GICS Sector"],
-        "industry": raw["GICS Sub-Industry"],
-        # Exchange not in Wikipedia table — filled by yfinance info later
-        "exchange": None,
-        "market_cap": None,
-        "last_updated": datetime.now(),
-    })
+    constituents = pd.DataFrame(
+        {
+            "symbol": raw["Symbol"].str.upper().str.strip(),
+            "long_name": raw["Security"],
+            "sector": raw["GICS Sector"],
+            "industry": raw["GICS Sub-Industry"],
+            # Exchange not in Wikipedia table — filled by yfinance info later
+            "exchange": None,
+            "market_cap": None,
+            "last_updated": datetime.now(),
+        }
+    )
 
     logger.info("Found %d S&P 500 constituents", len(constituents))
     return constituents
@@ -122,7 +125,9 @@ def fetch_historical_prices(
 
     logger.info(
         "Downloading historical prices for %d tickers from %s to %s",
-        len(tickers), start_str, end_str,
+        len(tickers),
+        start_str,
+        end_str,
     )
 
     all_frames: list[pd.DataFrame] = []
@@ -130,7 +135,12 @@ def fetch_historical_prices(
     failed: list[str] = []
 
     for i, batch in enumerate(batches):
-        logger.info("Downloading batch %d/%d (%d tickers)", i + 1, -(-len(tickers) // BATCH_SIZE_PRICES), len(batch))
+        logger.info(
+            "Downloading batch %d/%d (%d tickers)",
+            i + 1,
+            -(-len(tickers) // BATCH_SIZE_PRICES),
+            len(batch),
+        )
         for attempt in range(MAX_RETRIES):
             try:
                 raw = yf.download(
@@ -148,7 +158,9 @@ def fetch_historical_prices(
                     failed.extend(batch)
                     raw = pd.DataFrame()
                 else:
-                    logger.warning("Batch %d attempt %d failed: %s — retrying", i + 1, attempt + 1, exc)
+                    logger.warning(
+                        "Batch %d attempt %d failed: %s — retrying", i + 1, attempt + 1, exc
+                    )
                     time.sleep(RETRY_DELAY * (attempt + 1))
 
         if raw.empty:
@@ -163,21 +175,29 @@ def fetch_historical_prices(
         long["date"] = pd.to_datetime(long["date"]).dt.date
         long["last_updated"] = datetime.now()
 
-        all_frames.append(long[["symbol", "date", "open", "high", "low", "close", "volume", "last_updated"]])
+        all_frames.append(
+            long[["symbol", "date", "open", "high", "low", "close", "volume", "last_updated"]]
+        )
         time.sleep(RATE_LIMIT_DELAY)
 
     if failed:
         logger.warning("Failed to download %d tickers: %s", len(failed), failed)
 
     if not all_frames:
-        return pd.DataFrame(columns=["symbol", "date", "open", "high", "low", "close", "volume", "last_updated"])
+        return pd.DataFrame(
+            columns=["symbol", "date", "open", "high", "low", "close", "volume", "last_updated"]
+        )
 
     result = pd.concat(all_frames, ignore_index=True)
     result = result.dropna(subset=["close"])
     result = result[result["close"] > 0]
     result = result.sort_values(["symbol", "date"])
 
-    logger.info("Downloaded %d rows of price data across %d tickers", len(result), result["symbol"].nunique())
+    logger.info(
+        "Downloaded %d rows of price data across %d tickers",
+        len(result),
+        result["symbol"].nunique(),
+    )
     return result
 
 
@@ -195,7 +215,7 @@ def fetch_market_snapshots(tickers: list[str]) -> pd.DataFrame:
         volume, market_cap, week_52_high, week_52_low, last_updated.
     """
     logger.info("Fetching market snapshots for %d tickers", len(tickers))
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     failed: list[str] = []
 
     for i, symbol in enumerate(tickers):
@@ -205,17 +225,19 @@ def fetch_market_snapshots(tickers: list[str]) -> pd.DataFrame:
 
         try:
             fi = yf.Ticker(symbol).fast_info
-            rows.append({
-                "symbol": symbol,
-                "current_price": _safe_float(fi.last_price),
-                "day_high": _safe_float(fi.day_high),
-                "day_low": _safe_float(fi.day_low),
-                "volume": _safe_int(fi.last_volume),
-                "market_cap": _safe_float(fi.market_cap),
-                "week_52_high": _safe_float(fi.year_high),
-                "week_52_low": _safe_float(fi.year_low),
-                "last_updated": datetime.now(),
-            })
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "current_price": _safe_float(fi.last_price),
+                    "day_high": _safe_float(fi.day_high),
+                    "day_low": _safe_float(fi.day_low),
+                    "volume": _safe_int(fi.last_volume),
+                    "market_cap": _safe_float(fi.market_cap),
+                    "week_52_high": _safe_float(fi.year_high),
+                    "week_52_low": _safe_float(fi.year_low),
+                    "last_updated": datetime.now(),
+                }
+            )
             time.sleep(RATE_LIMIT_DELAY)
         except Exception as exc:
             logger.warning("Snapshot failed for %s: %s", symbol, exc)
@@ -225,10 +247,19 @@ def fetch_market_snapshots(tickers: list[str]) -> pd.DataFrame:
         logger.warning("Failed snapshots for %d tickers: %s", len(failed), failed[:10])
 
     if not rows:
-        return pd.DataFrame(columns=[
-            "symbol", "current_price", "day_high", "day_low",
-            "volume", "market_cap", "week_52_high", "week_52_low", "last_updated",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "current_price",
+                "day_high",
+                "day_low",
+                "volume",
+                "market_cap",
+                "week_52_high",
+                "week_52_low",
+                "last_updated",
+            ]
+        )
 
     result = pd.DataFrame(rows)
     result = result.dropna(subset=["current_price"])
@@ -242,9 +273,9 @@ def fetch_market_snapshots(tickers: list[str]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def _batched(items: list, size: int) -> list[list]:
+def _batched(items: list[str], size: int) -> list[list[str]]:
     """Split a list into chunks of at most ``size``."""
-    return [items[i: i + size] for i in range(0, len(items), size)]
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def _safe_float(value: object) -> float | None:
@@ -259,6 +290,6 @@ def _safe_float(value: object) -> float | None:
 def _safe_int(value: object) -> int | None:
     """Return int or None for missing/invalid values."""
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(value)  # type: ignore[no-any-return, call-overload]
     except (TypeError, ValueError):
         return None

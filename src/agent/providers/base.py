@@ -106,12 +106,15 @@ def get_provider() -> LLMProvider:
 
     if provider == "ollama":
         from src.agent.providers.ollama import OllamaProvider
+
         return OllamaProvider()
     elif provider == "anthropic":
         from src.agent.providers.anthropic import AnthropicProvider
+
         return AnthropicProvider()
     elif provider == "bedrock":
         from src.agent.providers.bedrock import BedrockProvider
+
         return BedrockProvider()
     else:
         raise ValueError(

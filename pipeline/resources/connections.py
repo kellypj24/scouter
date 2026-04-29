@@ -11,7 +11,7 @@ from dagster_dbt import DbtCliResource
 
 DBT_PROJECT_DIR = str(Path(__file__).resolve().parents[2] / "dbt")
 
-RESOURCES: dict = {
+RESOURCES: dict[str, object] = {
     "dbt": DbtCliResource(project_dir=DBT_PROJECT_DIR),
     "duckdb_path": EnvVar("DUCKDB_PATH"),
 }

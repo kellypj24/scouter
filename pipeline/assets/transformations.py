@@ -18,8 +18,9 @@ DBT_MANIFEST = DBT_PROJECT_DIR / "target" / "manifest.json"
 
 
 if DBT_MANIFEST.exists():
+
     @dbt_assets(manifest=DBT_MANIFEST)
-    def scouter_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource) -> None:  # type: ignore[return]
+    def scouter_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource) -> None:  # type: ignore[misc]
         """Run all dbt models in the Scouter project.
 
         Args:

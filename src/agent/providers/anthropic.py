@@ -4,13 +4,12 @@ Requires: uv add anthropic
 Env vars: ANTHROPIC_API_KEY, ANTHROPIC_MODEL (default: claude-sonnet-4-6)
 """
 
-import json
 import os
 from typing import Any
 
 from pydantic import BaseModel
 
-from src.agent.providers.base import LLMConnectionError, LLMError, LLMTimeoutError, LLMValidationError
+from src.agent.providers.base import LLMError, LLMValidationError
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -40,11 +39,10 @@ class AnthropicProvider:
         """Lazy-import Anthropic client to avoid hard dependency when not in use."""
         try:
             import anthropic
+
             return anthropic.AsyncAnthropic(api_key=self.api_key)
         except ImportError as exc:
-            raise LLMError(
-                "anthropic package not installed. Run: uv add anthropic"
-            ) from exc
+            raise LLMError("anthropic package not installed. Run: uv add anthropic") from exc
 
     async def complete(
         self,
@@ -77,7 +75,7 @@ class AnthropicProvider:
                 messages=filtered,
                 **kwargs,
             )
-            return response.content[0].text
+            return str(response.content[0].text)
         except Exception as exc:
             raise LLMError(f"Anthropic API error: {exc}") from exc
 

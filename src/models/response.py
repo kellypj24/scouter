@@ -5,7 +5,6 @@ Every agent response is a list of NarrativeBlocks. Never a raw string.
 
 from typing import Any
 
-import pandas as pd
 from pydantic import BaseModel, Field
 
 

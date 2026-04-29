@@ -35,8 +35,18 @@ _BLOCKED = re.compile(
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     "sector": ["sector", "industry", "rotation", "gics"],
     "risk": ["risk", "drawdown", "volatility", "sharpe", "var", "beta"],
-    "equity": ["stock", "ticker", "company", "return", "performance", "price",
-               "high", "low", "momentum", "screener"],
+    "equity": [
+        "stock",
+        "ticker",
+        "company",
+        "return",
+        "performance",
+        "price",
+        "high",
+        "low",
+        "momentum",
+        "screener",
+    ],
 }
 
 # Fallback query when LLM fails — returns a useful default result.
@@ -114,7 +124,8 @@ class QueryAgent:
         """
         q = question.lower()
         matched = [
-            domain for domain, keywords in _DOMAIN_KEYWORDS.items()
+            domain
+            for domain, keywords in _DOMAIN_KEYWORDS.items()
             if any(kw in q for kw in keywords)
         ]
         # Always include core — dims and facts underpin every mart.
@@ -145,7 +156,9 @@ class QueryAgent:
             SQLResponse,
             model=getattr(self._provider, "sql_model", None),  # Ollama routes to codellama
         )
-        sql_response = response if isinstance(response, SQLResponse) else SQLResponse.model_validate(response)
+        sql_response = (
+            response if isinstance(response, SQLResponse) else SQLResponse.model_validate(response)
+        )
         return self._validate_sql(sql_response.sql)
 
     def _validate_sql(self, sql: str) -> str:

@@ -10,8 +10,6 @@ Tables created in DuckDB main schema (raw layer for dbt):
 """
 
 import logging
-import os
-from datetime import datetime
 
 import duckdb
 import pandas as pd

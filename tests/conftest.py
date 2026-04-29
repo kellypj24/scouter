@@ -1,7 +1,7 @@
 """Shared pytest fixtures."""
 
-import pytest
 import duckdb
+import pytest
 
 
 @pytest.fixture
