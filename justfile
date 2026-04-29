@@ -27,6 +27,16 @@ fmt:
 run:
     uv run streamlit run app/main.py
 
+# Start Ollama + Streamlit together (Ctrl-C stops both)
+dev:
+    #!/usr/bin/env bash
+    ollama serve &
+    OLLAMA_PID=$!
+    trap "kill $OLLAMA_PID 2>/dev/null" EXIT INT TERM
+    sleep 2
+    uv run streamlit run app/main.py
+    kill $OLLAMA_PID 2>/dev/null
+
 # Start Dagster dev server (pipeline UI + scheduler)
 pipeline:
     uv run dagster dev

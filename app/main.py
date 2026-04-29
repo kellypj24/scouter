@@ -14,7 +14,7 @@ from src.agent.narrative_agent import NarrativeAgent
 from src.agent.orchestrator import Orchestrator
 from src.agent.providers.base import get_provider
 from src.agent.query_agent import QueryAgent
-from src.data.db import get_connection
+from src.data.db import get_read_connection
 from src.models.agent import AgentRequest, AgentResponse
 
 st.set_page_config(
@@ -31,7 +31,7 @@ st.set_page_config(
 
 def _build_orchestrator() -> Orchestrator:
     provider = get_provider()
-    conn = get_connection()
+    conn = get_read_connection()
     return Orchestrator(
         provider=provider,
         query_agent=QueryAgent(provider=provider, conn=conn),
