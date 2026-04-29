@@ -6,6 +6,7 @@ UI wiring only. All agent logic lives in src/.
 from __future__ import annotations
 
 import asyncio
+import threading
 
 import streamlit as st
 
@@ -22,6 +23,15 @@ st.set_page_config(
     page_icon="🔭",
     layout="wide",
 )
+
+# ---------------------------------------------------------------------------
+# Dedicated background event loop — created once per process at import time.
+# Keeps the aiohttp session alive across Streamlit reruns; avoids the
+# "Event loop is closed" error that results from asyncio.run() closing its
+# loop after each question while OllamaProvider holds a cached session.
+# ---------------------------------------------------------------------------
+_loop = asyncio.new_event_loop()
+threading.Thread(target=_loop.run_forever, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -45,18 +55,12 @@ def _get_orchestrator() -> Orchestrator:
     return st.session_state.orchestrator  # type: ignore[no-any-return]
 
 
-def _get_event_loop() -> asyncio.AbstractEventLoop:
-    if "event_loop" not in st.session_state:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        st.session_state.event_loop = loop
-    return st.session_state.event_loop  # type: ignore[no-any-return]
-
-
 def _run_question(question: str) -> AgentResponse:
-    loop = _get_event_loop()
     orchestrator = _get_orchestrator()
-    return loop.run_until_complete(orchestrator.run(AgentRequest(question=question)))
+    future = asyncio.run_coroutine_threadsafe(
+        orchestrator.run(AgentRequest(question=question)), _loop
+    )
+    return future.result(timeout=120)
 
 
 # ---------------------------------------------------------------------------
