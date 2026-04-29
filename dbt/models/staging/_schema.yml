@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: stg_prices
+    description: Cleaned daily OHLCV price data. One row per ticker per trading day.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close
+        tests: [not_null]
+
+  - name: stg_companies
+    description: S&P 500 constituent metadata. One row per ticker.
+    columns:
+      - name: ticker
+        tests: [not_null, unique]
+      - name: sector
+        tests: [not_null]
+
+  - name: stg_market_snapshots
+    description: Latest market snapshot per ticker. One row per ticker.
+    columns:
+      - name: ticker
+        tests: [not_null, unique]

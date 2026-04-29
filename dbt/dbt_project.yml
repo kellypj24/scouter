@@ -14,7 +14,20 @@ models:
   scouter:
     staging:
       +materialized: view
+      +schema: staging
     intermediate:
       +materialized: table
-    analytics:
-      +materialized: table
+      +schema: intermediate
+    marts:
+      core:
+        +materialized: table
+        +schema: core
+      equity:
+        +materialized: table
+        +schema: equity
+      sector:
+        +materialized: table
+        +schema: sector
+      risk:
+        +materialized: table
+        +schema: risk

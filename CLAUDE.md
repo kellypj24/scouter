@@ -154,6 +154,26 @@ assignments/
 - **Dagster Definitions** pattern — `all_assets`, `all_checks`, `all_schedules` lists wired in `pipeline/__init__.py`
 - **EnvVar()** for all secrets in Dagster resources
 
+## Data Architecture (Kimball Dimensional Model)
+
+```
+raw (DuckDB main schema)        yfinance ingestion via Dagster
+  └── staging (views)           stg_prices, stg_companies, stg_market_snapshots
+       └── intermediate (tables) int_daily_returns, int_volatility, int_sector_aggregates
+            └── marts/
+                 core/          dim_company, dim_date, fct_daily_prices, fct_fundamentals
+                 equity/        mart_equity_performance, mart_equity_screener
+                 sector/        mart_sector_rotation, mart_sector_fundamentals
+                 risk/          mart_risk_profile, mart_drawdown
+```
+
+**LLM schema injection strategy**: The orchestrator classifies the user's question into a domain
+(equity / sector / risk) and injects only that domain's mart schema into the prompt. The LLM
+generates simple queries against pre-joined marts — not raw multi-table joins.
+
+**Adding a new domain**: Create `dbt/models/marts/<domain>/`, add schema config to `dbt_project.yml`,
+register with the schema injection classifier in `src/agent/orchestrator.py`.
+
 ## Anti-Patterns (Never Do)
 - LLM asserts a number without a backing SQL query
 - Synchronous Ollama calls anywhere

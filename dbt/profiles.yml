@@ -3,5 +3,5 @@ scouter:
   outputs:
     dev:
       type: duckdb
-      path: "{{ env_var('DUCKDB_PATH', '../data/scouter.duckdb') }}"
+      path: "{{ env_var('DUCKDB_PATH', 'data/scouter.duckdb') }}"
       threads: 4

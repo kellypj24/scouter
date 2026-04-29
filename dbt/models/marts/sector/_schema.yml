@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: mart_sector_rotation
+    description: >
+      Daily sector-level performance. Grain: sector + date.
+      Designed for sector rotation and relative performance questions.
+      Example: "Which sectors are leading vs lagging YTD?"
+
+  - name: mart_sector_fundamentals
+    description: >
+      Sector-level fundamental aggregates (latest snapshot).
+      Grain: sector.
+      Example: "What is the average Sharpe ratio by sector?"

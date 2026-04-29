@@ -1,0 +1,28 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw tables ingested from yfinance by the Dagster pipeline.
+    schema: main
+    tables:
+      - name: historical_data
+        description: Daily OHLCV price data per ticker.
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: date
+            tests: [not_null]
+          - name: close
+            tests: [not_null]
+
+      - name: companies
+        description: S&P 500 constituent metadata — sector, industry, market cap.
+        columns:
+          - name: symbol
+            tests: [not_null, unique]
+
+      - name: market_summaries
+        description: Point-in-time market snapshot per ticker (52w hi/lo, market cap).
+        columns:
+          - name: symbol
+            tests: [not_null, unique]

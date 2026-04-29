@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: dim_company
+    description: >
+      Company dimension. One row per ticker.
+      Single source of truth for ticker metadata used across all domain marts.
+    columns:
+      - name: ticker
+        tests: [not_null, unique]
+      - name: sector
+        tests: [not_null]
+      - name: market_cap_tier
+        tests:
+          - accepted_values:
+              values: [mega_cap, large_cap, mid_cap, small_cap, unknown]
+
+  - name: dim_date
+    description: >
+      Date dimension spine covering the full range of price history.
+      One row per calendar day.
+    columns:
+      - name: date
+        tests: [not_null, unique]
+      - name: day_of_week_name
+        tests:
+          - accepted_values:
+              values: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+
+  - name: fct_daily_prices
+    description: >
+      Core price fact table. Grain: ticker + date.
+      Joins stg_prices with dim_company and dim_date.
+      Foundation for all equity and sector domain marts.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+
+  - name: fct_fundamentals
+    description: >
+      Point-in-time fundamentals snapshot per ticker.
+      Grain: ticker + snapshot_at date.
+    columns:
+      - name: ticker
+        tests: [not_null]

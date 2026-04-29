@@ -52,7 +52,8 @@ class OllamaProvider:
         self.host = host or os.getenv("OLLAMA_HOST", DEFAULT_HOST)
         self.model = model or os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
         self.sql_model = sql_model or os.getenv("OLLAMA_SQL_MODEL", DEFAULT_SQL_MODEL)
-        self.timeout = int(timeout or os.getenv("OLLAMA_TIMEOUT", DEFAULT_TIMEOUT))
+        timeout_env = os.getenv("OLLAMA_TIMEOUT", str(DEFAULT_TIMEOUT))
+        self.timeout = timeout if timeout is not None else int(timeout_env)
         self._connector: aiohttp.TCPConnector | None = None
         self._session: aiohttp.ClientSession | None = None
 
@@ -94,7 +95,7 @@ class OllamaProvider:
             },
         }
         response = await self._post("/api/chat", payload)
-        return response["message"]["content"]
+        return str(response["message"]["content"])
 
     async def complete_structured(
         self,
@@ -181,7 +182,7 @@ class OllamaProvider:
                     if resp.status != 200:
                         body = await resp.text()
                         raise LLMError(f"Ollama returned {resp.status}: {body}")
-                    return await resp.json()  # type: ignore[return-value]
+                    return await resp.json()  # type: ignore[no-any-return]
             except aiohttp.ClientConnectorError as exc:
                 last_exc = LLMConnectionError(f"Cannot reach Ollama at {self.host}: {exc}")
             except TimeoutError as exc:

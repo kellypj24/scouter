@@ -5,13 +5,12 @@ Env vars: AWS_REGION, BEDROCK_MODEL (default: anthropic.claude-sonnet-4-6-v1)
           Standard AWS credential chain (AWS_ACCESS_KEY_ID / role / profile)
 """
 
-import json
 import os
 from typing import Any
 
 from pydantic import BaseModel
 
-from src.agent.providers.base import LLMConnectionError, LLMError, LLMValidationError
+from src.agent.providers.base import LLMError, LLMValidationError
 
 DEFAULT_MODEL = "anthropic.claude-sonnet-4-6-v1"
 DEFAULT_REGION = "us-east-1"
@@ -40,6 +39,7 @@ class BedrockProvider:
         """Lazy-import boto3 client to avoid hard dependency when not in use."""
         try:
             import boto3
+
             return boto3.client("bedrock-runtime", region_name=self.region)
         except ImportError as exc:
             raise LLMError("boto3 not installed. Run: uv add boto3") from exc
@@ -66,7 +66,8 @@ class BedrockProvider:
         system_parts = [{"text": m["content"]} for m in messages if m["role"] == "system"]
         converse_messages = [
             {"role": m["role"], "content": [{"text": m["content"]}]}
-            for m in messages if m["role"] != "system"
+            for m in messages
+            if m["role"] != "system"
         ]
 
         def _call() -> str:
@@ -79,7 +80,7 @@ class BedrockProvider:
                     "temperature": kwargs.pop("temperature", 0.1),
                 },
             )
-            return response["output"]["message"]["content"][0]["text"]
+            return str(response["output"]["message"]["content"][0]["text"])
 
         try:
             return await asyncio.get_event_loop().run_in_executor(None, _call)
@@ -108,17 +109,20 @@ class BedrockProvider:
         system_parts = [{"text": m["content"]} for m in messages if m["role"] == "system"]
         converse_messages = [
             {"role": m["role"], "content": [{"text": m["content"]}]}
-            for m in messages if m["role"] != "system"
+            for m in messages
+            if m["role"] != "system"
         ]
 
         tool_config = {
-            "tools": [{
-                "toolSpec": {
-                    "name": schema.__name__,
-                    "description": schema.__doc__ or f"Output conforming to {schema.__name__}",
-                    "inputSchema": {"json": schema.model_json_schema()},
+            "tools": [
+                {
+                    "toolSpec": {
+                        "name": schema.__name__,
+                        "description": schema.__doc__ or f"Output conforming to {schema.__name__}",
+                        "inputSchema": {"json": schema.model_json_schema()},
+                    }
                 }
-            }],
+            ],
             "toolChoice": {"tool": {"name": schema.__name__}},
         }
 
@@ -131,14 +135,14 @@ class BedrockProvider:
                 inferenceConfig={"maxTokens": kwargs.pop("max_tokens", 1024)},
             )
             content = response["output"]["message"]["content"]
-            tool_block = next(
-                b["toolUse"]["input"] for b in content if "toolUse" in b
-            )
-            return schema.model_validate(tool_block)
+            tool_inputs = [b["toolUse"]["input"] for b in content if "toolUse" in b]
+            if not tool_inputs:
+                raise LLMValidationError("No toolUse block in Bedrock response")
+            return schema.model_validate(tool_inputs[0])
 
         try:
             return await asyncio.get_event_loop().run_in_executor(None, _call)
-        except StopIteration as exc:
-            raise LLMValidationError("No toolUse block in Bedrock response") from exc
+        except LLMValidationError:
+            raise
         except Exception as exc:
             raise LLMError(f"Bedrock structured completion error: {exc}") from exc
