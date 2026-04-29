@@ -153,6 +153,7 @@ jobs:
           fi
 
           echo "test_files=$TEST_FILES" >> "$GITHUB_OUTPUT"
+          echo "run_full=$RUN_FULL" >> "$GITHUB_OUTPUT"
           if [ -z "$TEST_FILES" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "No matching test files — skipping tests."
@@ -164,12 +165,20 @@ jobs:
       - name: Run targeted tests
         if: steps.resolve-tests.outputs.skip != 'true'
         run: |
+          # Enforce the 80% floor only when the full suite runs.
+          # Targeted runs cover a subset of src/ so global coverage is always low —
+          # enforcing the threshold there would penalise PRs for not re-running
+          # every unrelated test file.
+          FAIL_UNDER=""
+          if [ "${{ steps.resolve-tests.outputs.run_full }}" = "true" ]; then
+            FAIL_UNDER="--cov-fail-under=80"
+          fi
           uv run pytest ${{ steps.resolve-tests.outputs.test_files }} \
             -v --tb=short \
             --cov=src --cov=pipeline \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            --cov-fail-under=80
+            $FAIL_UNDER
 
       - name: Coverage summary
         if: steps.resolve-tests.outputs.skip != 'true'
