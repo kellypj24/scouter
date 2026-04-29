@@ -45,9 +45,18 @@ def _get_orchestrator() -> Orchestrator:
     return st.session_state.orchestrator  # type: ignore[no-any-return]
 
 
+def _get_event_loop() -> asyncio.AbstractEventLoop:
+    if "event_loop" not in st.session_state:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        st.session_state.event_loop = loop
+    return st.session_state.event_loop  # type: ignore[no-any-return]
+
+
 def _run_question(question: str) -> AgentResponse:
+    loop = _get_event_loop()
     orchestrator = _get_orchestrator()
-    return asyncio.run(orchestrator.run(AgentRequest(question=question)))
+    return loop.run_until_complete(orchestrator.run(AgentRequest(question=question)))
 
 
 # ---------------------------------------------------------------------------
