@@ -6,7 +6,6 @@ UI wiring only. All agent logic lives in src/.
 from __future__ import annotations
 
 import asyncio
-import threading
 
 import streamlit as st
 
@@ -24,43 +23,28 @@ st.set_page_config(
     layout="wide",
 )
 
-# ---------------------------------------------------------------------------
-# Dedicated background event loop — created once per process at import time.
-# Keeps the aiohttp session alive across Streamlit reruns; avoids the
-# "Event loop is closed" error that results from asyncio.run() closing its
-# loop after each question while OllamaProvider holds a cached session.
-# ---------------------------------------------------------------------------
-_loop = asyncio.new_event_loop()
-threading.Thread(target=_loop.run_forever, daemon=True).start()
-
 
 # ---------------------------------------------------------------------------
-# Orchestrator — built once per session, cached in session state
+# Run a question through the full pipeline.
+# A fresh orchestrator (and aiohttp session) is created per question so
+# asyncio.run() always operates on a session that belongs to its own loop.
+# Caching the session across asyncio.run() calls causes aiohttp's timeout
+# context manager to fail ("must be used inside a task") on every call after
+# the first, because the session is bound to the previous (now closed) loop.
+# Schema context is cached at module level in src/data/schema.py so the
+# dbt artifact load only happens once per process.
 # ---------------------------------------------------------------------------
 
 
-def _build_orchestrator() -> Orchestrator:
+def _run_question(question: str) -> AgentResponse:
     provider = get_provider()
     conn = get_read_connection()
-    return Orchestrator(
+    orch = Orchestrator(
         provider=provider,
         query_agent=QueryAgent(provider=provider, conn=conn),
         narrative_agent=NarrativeAgent(provider=provider),
     )
-
-
-def _get_orchestrator() -> Orchestrator:
-    if "orchestrator" not in st.session_state:
-        st.session_state.orchestrator = _build_orchestrator()
-    return st.session_state.orchestrator  # type: ignore[no-any-return]
-
-
-def _run_question(question: str) -> AgentResponse:
-    orchestrator = _get_orchestrator()
-    future = asyncio.run_coroutine_threadsafe(
-        orchestrator.run(AgentRequest(question=question)), _loop
-    )
-    return future.result(timeout=120)
+    return asyncio.run(orch.run(AgentRequest(question=question)))
 
 
 # ---------------------------------------------------------------------------

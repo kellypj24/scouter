@@ -30,7 +30,7 @@ def render_block(
     if block.chart_spec is not None:
         fig = build_chart(block.chart_spec, block.data)
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     with st.expander("SQL", expanded=False):
         st.code(block.query_result.sql, language="sql")
