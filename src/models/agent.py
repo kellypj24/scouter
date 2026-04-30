@@ -16,7 +16,7 @@ class AgentRequest(BaseModel):
 
     question: str
     conversation_id: str | None = None
-    max_blocks: int = 3
+    max_blocks: int = 2
 
 
 class AgentResponse(BaseModel):

@@ -71,6 +71,14 @@ class Orchestrator:
             block = await self._run_block(question)
             blocks.append(block)
 
+        # When multiple blocks were generated, suppress any that returned no data —
+        # they're artefacts of over-decomposition and confuse the user. Always keep
+        # at least one block so the response is never empty.
+        if len(blocks) > 1:
+            populated = [b for b in blocks if b.query_result.row_count > 0]
+            if populated:
+                blocks = populated
+
         fallback_used = any(b.query_result.sql == _FALLBACK_SQL for b in blocks)
         return AgentResponse(blocks=blocks, fallback_used=fallback_used)
 
@@ -127,6 +135,34 @@ class Orchestrator:
         except duckdb.Error as exc:
             logger.error("Query execution failed for %r: %s", question, exc)
             return _error_block(question, str(exc))
+        except ValueError as exc:
+            logger.warning("Query could not be generated for %r: %s", question, exc)
+            logger.info("FEEDBACK_NEEDED question=%r — log this to improve data coverage", question)
+            return _unanswerable_block(question, str(exc))
+
+
+def _unanswerable_block(question: str, detail: str) -> NarrativeBlock:
+    """NarrativeBlock returned when the requested metric is not in the schema."""
+    import re as _re
+    col_match = _re.search(r"Column '(\w+)' does not exist", detail)
+    metric = col_match.group(1).replace("_", " ") if col_match else "that metric"
+    return NarrativeBlock(
+        question=question,
+        query_result=QueryResult(sql="", row_count=0, columns=[]),
+        data=pd.DataFrame(),
+        chart_spec=None,
+        prose=(
+            f"This dataset doesn't contain {metric} data, so that question can't be answered directly. "
+            "The available data covers stock prices, daily and YTD returns, volatility, Sharpe ratio, "
+            "drawdown from 52-week highs, and sector-level aggregates. "
+            "Income-statement metrics (revenue, earnings, margins) are not currently ingested."
+        ),
+        follow_ups=[
+            f"What price and return data is available instead?",
+            "Which stocks have the highest YTD return?",
+            "What does the volatility profile look like for this stock?",
+        ],
+    )
 
 
 def _error_block(question: str, detail: str) -> NarrativeBlock:
