@@ -57,6 +57,29 @@ dbt-test:
 dbt-docs:
     uv run dbt docs generate --project-dir dbt/ --profiles-dir dbt/
 
+# Run a single question through the eval pipeline (headless, no Streamlit)
+# Usage: just ask "What are the top 10 best performing stocks?"
+ask question:
+    uv run python scripts/eval_runner.py {{ quote(question) }}
+
+# Run a single question and save the chart as HTML in /tmp/scouter_eval/
+# Usage: just ask-chart "Show Apple's 50-day moving average"
+ask-chart question:
+    uv run python scripts/eval_runner.py --chart-dir /tmp/scouter_eval {{ quote(question) }}
+
+# Run all eval fixtures and print a pass/fail table
+eval:
+    uv run python scripts/eval_score.py
+
+# Run eval fixtures matching a substring filter
+# Usage: just eval-filter screener
+eval-filter substr:
+    uv run python scripts/eval_score.py --filter {{ substr }}
+
+# Run eval and save all charts to /tmp/scouter_eval/
+eval-charts:
+    uv run python scripts/eval_score.py --chart-dir /tmp/scouter_eval
+
 # Clean build artifacts
 clean:
     find . -type d -name __pycache__ -exec rm -rf {} +

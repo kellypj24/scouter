@@ -1,0 +1,161 @@
+# Scouter eval fixtures
+# Each fixture defines a question and the objective properties the response must satisfy.
+#
+# Expectations:
+#   min_rows:          int   — block must have at least this many rows
+#   max_blocks:        int   — response must have at most this many blocks
+#   fallback:          bool  — whether rule-based fallback SQL is acceptable (usually false)
+#   chart_type:        str   — expected chart type (line/bar/scatter/histogram) or null
+#   color_col_required: bool — color_col must be non-null (required for multi-entity charts)
+#   sql_table:         str   — this substring must appear in the executed SQL
+#   sql_not_contains:  str   — this substring must NOT appear in the SQL
+#   unanswerable:      bool  — expect a 0-row / no-SQL block (metric not in schema)
+
+fixtures:
+
+  # ── Screener / ranking ────────────────────────────────────────────────────
+
+  - id: screener_top10_ytd
+    question: "What are the top 10 best performing stocks this year?"
+    expect:
+      min_rows: 10
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      color_col_required: false
+      sql_table: mart_equity_screener
+
+  - id: screener_low_volatility
+    question: "Which 10 stocks have the lowest volatility right now?"
+    expect:
+      min_rows: 10
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_equity_screener
+
+  - id: screener_high_sharpe
+    question: "Show me the top 15 stocks by Sharpe ratio"
+    expect:
+      min_rows: 15
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_equity_screener
+
+  - id: screener_large_cap
+    question: "Which large-cap stocks have the highest YTD return?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      sql_table: mart_equity_screener
+
+  # ── Single-stock time-series ───────────────────────────────────────────────
+
+  - id: timeseries_apple_6m
+    question: "How has Apple stock performed over the last 6 months?"
+    expect:
+      min_rows: 100
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: false
+      sql_table: mart_equity_performance
+
+  - id: timeseries_nvidia_ytd
+    question: "Show me Nvidia's price history this year"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_equity_performance
+
+  # ── Multi-stock time-series (color required) ──────────────────────────────
+
+  - id: multistock_top5_trend
+    question: "Show me how today's top 5 companies have trended the last 3 months"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
+  - id: multistock_faang_comparison
+    question: "Compare the price history of Apple, Google, and Amazon over the last 3 months"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
+  # ── Derived metrics (window functions) ───────────────────────────────────
+
+  - id: moving_avg_apple
+    question: "Show Apple's 50-day moving average over the last 3 months"
+    expect:
+      min_rows: 30
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_equity_performance
+      sql_not_contains: "moving_average"   # must use AVG(...) OVER, not a literal column
+
+  - id: moving_avg_comparison
+    question: "How has Apple's stock price changed over the last 30 days compared to its 50-day moving average?"
+    expect:
+      min_rows: 20
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_equity_performance
+
+  # ── Sector queries ────────────────────────────────────────────────────────
+
+  - id: sector_ytd_performance
+    question: "Which sectors have performed best this year?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_sector
+
+  - id: sector_rotation
+    question: "Show me sector rotation data for the last quarter"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      sql_table: mart_sector
+
+  # ── Risk queries ──────────────────────────────────────────────────────────
+
+  - id: risk_drawdown
+    question: "Which stocks have the worst drawdown from their 52-week high?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+
+  # ── Unanswerable (metric not in schema) ──────────────────────────────────
+
+  - id: unanswerable_revenue
+    question: "What is Apple's revenue for the last quarter?"
+    expect:
+      min_rows: 0
+      max_blocks: 2          # may produce 1-2 blocks, all with 0 rows
+      unanswerable: true     # at least one block must have sql="" (error/unanswerable block)
+
+  - id: unanswerable_eps
+    question: "What is Nvidia's earnings per share?"
+    expect:
+      min_rows: 0
+      max_blocks: 2
+      unanswerable: true
