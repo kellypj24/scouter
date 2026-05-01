@@ -365,6 +365,21 @@ class QueryAgent:
         except sqlglot.errors.SqlglotError as exc:
             logger.warning("sqlglot could not transpile SQL (using as-is): %s", exc)
 
+        # Detect GROUP BY aggregate on performance without OVER — likely malformed moving average.
+        # AVG(close) GROUP BY date loses the date column from results, breaking chart generation.
+        if (
+            re.search(r"\bGROUP\s+BY\b", sql, re.IGNORECASE)
+            and re.search(r"\bAVG\s*\(", sql, re.IGNORECASE)
+            and not re.search(r"\bOVER\s*\(", sql, re.IGNORECASE)
+            and re.search(r"\bmart_equity_performance\b", sql, re.IGNORECASE)
+        ):
+            raise ValueError(
+                "AVG() with GROUP BY on mart_equity_performance is a malformed moving average. "
+                "Use a window function: AVG(close) OVER (PARTITION BY ticker ORDER BY date "
+                "ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma_50d. "
+                "Include ticker, date, and close in SELECT."
+            )
+
         return sql
 
     def _validate_schema(self, sql: str) -> list[str]:
