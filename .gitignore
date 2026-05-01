@@ -49,3 +49,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Go binaries
+eval/scouter-eval
+eval/eval

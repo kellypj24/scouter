@@ -11,7 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -26,12 +26,32 @@ _VALID_CHART_TYPES = frozenset({"line", "bar", "scatter", "area", "histogram"})
 _MAX_SAMPLE_ROWS = 5
 _MAX_SAMPLE_COLS = 8
 
+# Known date and categorical column names for chart inference.
+_DATE_COLS = frozenset({"date", "price_date", "trade_date", "period_date", "as_of_date"})
+_CAT_COLS = frozenset({"ticker", "company_name", "sector", "industry", "gics_sector", "gics_sub_industry"})
+
+# Preferred y-axis columns in priority order for auto-inference.
+_PREFERRED_Y = (
+    "close",
+    "ytd_return",
+    "sharpe_20d",
+    "volatility_20d",
+    "drawdown_from_52w_high",
+    "avg_ytd_return_ew",
+    "daily_return",
+    "ma_50d",
+    "avg_volatility_20d",
+    "avg_sharpe_20d",
+    "avg_drawdown_from_52w_high",
+    "latest_close",
+)
+
 
 class NarrativeResponse(BaseModel):
     """Structured LLM output for narrative and chart generation."""
 
     chartable: bool
-    chart_type: str | None = None
+    chart_type: Literal["line", "bar", "scatter", "area", "histogram"] | None = None
     x_col: str | None = None
     y_col: str | None = None
     title: str = ""
@@ -122,8 +142,9 @@ class NarrativeAgent:
     ) -> NarrativeBlock:
         """Build a NarrativeBlock from the LLM response.
 
-        Column references are validated against the actual DataFrame — invalid
-        columns drop the chart but preserve the prose.
+        LLM column suggestions are validated against the actual DataFrame; any
+        invalid or missing values are filled in by _infer_chart_spec so that
+        a chart is produced whenever the data is chartable.
 
         Args:
             question: Original question.
@@ -134,29 +155,26 @@ class NarrativeAgent:
         Returns:
             Assembled NarrativeBlock.
         """
-        chart_spec: ChartSpec | None = None
+        col_set = set(query_result.columns)
+        numeric_cols = data.select_dtypes(include="number").columns.tolist()
+        data_chartable = len(data) >= 3 and bool(numeric_cols)
 
-        if response.chartable and response.chart_type in _VALID_CHART_TYPES:
-            col_set = set(query_result.columns)
-            if response.x_col and response.y_col and response.x_col in col_set and response.y_col in col_set:
-                color_col = (
-                    response.color_col
-                    if response.color_col and response.color_col in col_set
-                    else None
-                )
-                chart_spec = ChartSpec(
-                    chart_type=response.chart_type,
-                    x_col=response.x_col,
-                    y_col=response.y_col,
-                    title=response.title,
-                    color_col=color_col,
-                )
-            else:
-                logger.warning(
-                    "LLM returned columns not in result (x=%r y=%r) — dropping chart",
-                    response.x_col,
-                    response.y_col,
-                )
+        chart_spec: ChartSpec | None = None
+        if response.chartable or data_chartable:
+            preferred_x = response.x_col if response.x_col and response.x_col in col_set else None
+            preferred_y = response.y_col if response.y_col and response.y_col in col_set else None
+            preferred_color = (
+                response.color_col if response.color_col and response.color_col in col_set else None
+            )
+            chart_spec = _infer_chart_spec(
+                columns=query_result.columns,
+                data=data,
+                preferred_type=response.chart_type,
+                preferred_x=preferred_x,
+                preferred_y=preferred_y,
+                preferred_color=preferred_color,
+                title=response.title,
+            )
 
         return NarrativeBlock(
             question=question,
@@ -171,6 +189,100 @@ class NarrativeAgent:
 # ---------------------------------------------------------------------------
 # Helpers (module-level so they're independently testable)
 # ---------------------------------------------------------------------------
+
+
+def _infer_chart_spec(
+    columns: list[str],
+    data: pd.DataFrame,
+    preferred_type: str | None,
+    preferred_x: str | None,
+    preferred_y: str | None,
+    preferred_color: str | None,
+    title: str,
+) -> ChartSpec | None:
+    """Build a ChartSpec, using LLM suggestions where valid and inferring the rest.
+
+    When the LLM returns None or an invalid column name, this function derives
+    sensible defaults from the DataFrame's structure (date columns → line chart;
+    categorical columns → bar chart; multiple tickers → color by ticker).
+
+    Args:
+        columns: Column names from the query result.
+        data: Query result DataFrame.
+        preferred_type: LLM-suggested chart type (validated to be in _VALID_CHART_TYPES upstream).
+        preferred_x: LLM-suggested x column (already confirmed to exist in data).
+        preferred_y: LLM-suggested y column (already confirmed to exist in data).
+        preferred_color: LLM-suggested color column (already confirmed to exist in data).
+        title: Chart title from LLM.
+
+    Returns:
+        ChartSpec, or None if the data cannot be charted.
+    """
+    if len(data) < 3:
+        return None
+
+    col_set = set(columns)
+    numeric_cols = data.select_dtypes(include="number").columns.tolist()
+    numeric_set = set(numeric_cols)
+    if not numeric_cols:
+        return None
+
+    date_cols = [c for c in columns if c.lower() in _DATE_COLS]
+    cat_cols = [c for c in columns if c.lower() in _CAT_COLS]
+
+    # Determine chart type: trust LLM if valid, infer from data shape otherwise.
+    chart_type = preferred_type if preferred_type in _VALID_CHART_TYPES else None
+    if chart_type is None:
+        chart_type = "line" if date_cols else ("bar" if cat_cols else None)
+    if chart_type is None:
+        return None
+
+    # Determine x_col.
+    x_col = preferred_x
+    if x_col is None:
+        if chart_type == "line":
+            x_col = date_cols[0] if date_cols else None
+        else:
+            # Prefer named categorical columns; fall back to first non-numeric column.
+            x_col = cat_cols[0] if cat_cols else next(
+                (c for c in columns if c not in numeric_set), None
+            ) or (columns[0] if columns else None)
+
+    # Determine y_col.
+    y_col = preferred_y
+    if y_col is None:
+        for candidate in _PREFERRED_Y:
+            if candidate in numeric_cols:
+                y_col = candidate
+                break
+        if y_col is None:
+            non_x = [c for c in numeric_cols if c != x_col]
+            y_col = non_x[0] if non_x else (numeric_cols[0] if numeric_cols else None)
+
+    if not x_col or not y_col:
+        return None
+
+    # Determine color_col.
+    color_col = preferred_color
+    if color_col is None and chart_type == "line" and "ticker" in col_set:
+        try:
+            if data["ticker"].nunique() > 1:
+                color_col = "ticker"
+        except Exception:
+            pass
+    elif color_col is None and chart_type == "bar":
+        if "sector" in col_set and x_col != "sector":
+            color_col = "sector"
+        elif "industry" in col_set and x_col != "industry":
+            color_col = "industry"
+
+    return ChartSpec(
+        chart_type=chart_type,
+        x_col=x_col,
+        y_col=y_col,
+        title=title,
+        color_col=color_col,
+    )
 
 
 def _data_sample(df: pd.DataFrame) -> str:
@@ -239,11 +351,21 @@ def _fallback_block(
         if top:
             lines.append(f"Top entries: {', '.join(str(v) for v in top)}.")
 
+    chart_spec = _infer_chart_spec(
+        columns=query_result.columns,
+        data=data,
+        preferred_type=None,
+        preferred_x=None,
+        preferred_y=None,
+        preferred_color=None,
+        title="",
+    )
+
     return NarrativeBlock(
         question=question,
         query_result=query_result,
         data=data,
-        chart_spec=None,
+        chart_spec=chart_spec,
         prose=" ".join(lines),
         follow_ups=[],
     )

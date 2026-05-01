@@ -80,9 +80,23 @@ eval-filter substr:
 eval-charts:
     uv run python scripts/eval_score.py --chart-dir /tmp/scouter_eval
 
+# Build the Go eval runner binary
+eval-go-build:
+    go -C eval build -o scouter-eval .
+
+# Run all eval fixtures concurrently using the Go runner
+eval-go *args:
+    go -C eval run . -root `pwd` {{ args }}
+
+# Run Go eval fixtures matching a filter
+# Usage: just eval-go-filter screener
+eval-go-filter substr:
+    go -C eval run . -root `pwd` -filter {{ substr }}
+
 # Clean build artifacts
 clean:
     find . -type d -name __pycache__ -exec rm -rf {} +
     find . -type d -name .pytest_cache -exec rm -rf {} +
     find . -name "*.pyc" -delete
     find . -name ".coverage" -delete
+    rm -f eval/scouter-eval

@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 _DBT_TARGET = Path(__file__).parents[2] / "dbt" / "target"
 
+# VARCHAR columns with at most this many distinct values get their values
+# injected into the prompt so the LLM generates correct WHERE clauses.
+_ENUM_MAX_DISTINCT = 15
+
 # Schemas exposed to the LLM — staging/intermediate are internal.
 _DOMAIN_MAP: dict[str, str] = {
     "main_core": "core",
@@ -154,6 +158,35 @@ def _load_from_duckdb(conn: duckdb.DuckDBPyConnection) -> SchemaContext:
     return SchemaContext(models=list(models_map.values()))
 
 
+def _enrich_enum_values(ctx: SchemaContext, conn: duckdb.DuckDBPyConnection) -> None:
+    """Inject distinct values for low-cardinality VARCHAR columns into descriptions.
+
+    Runs one query per qualifying column against the live DuckDB data so the
+    LLM sees the actual enum values (e.g. market_cap_tier: 'large_cap', 'mega_cap')
+    rather than having to guess string formats.
+    """
+    for model in ctx.models:
+        duckdb_schema = _SCHEMA_FOR_DOMAIN.get(model.domain, model.domain)
+        qualified = f"{duckdb_schema}.{model.name}"
+        for col in model.columns:
+            if col.dtype.upper() not in ("VARCHAR", "TEXT", "STRING"):
+                continue
+            try:
+                rows = conn.execute(
+                    f"SELECT DISTINCT {col.name} FROM {qualified} "  # noqa: S608
+                    f"WHERE {col.name} IS NOT NULL "
+                    f"ORDER BY 1 LIMIT {_ENUM_MAX_DISTINCT + 1}"
+                ).fetchall()
+            except Exception:
+                continue  # table not materialized yet or column unreadable
+            if 0 < len(rows) <= _ENUM_MAX_DISTINCT:
+                values = ", ".join(f"'{r[0]}'" for r in rows)
+                suffix = f"values: {values}"
+                col.description = (
+                    f"{col.description}  [{suffix}]" if col.description else f"[{suffix}]"
+                )
+
+
 # Module-level cache — artifacts are loaded once per process.
 _context: SchemaContext | None = None
 
@@ -168,6 +201,8 @@ def load_schema_context(conn: duckdb.DuckDBPyConnection | None = None) -> Schema
         _context = _load_from_artifacts() or (
             _load_from_duckdb(conn) if conn is not None else SchemaContext(models=[])
         )
+        if conn is not None and _context.models:
+            _enrich_enum_values(_context, conn)
     return _context
 
 

@@ -56,6 +56,23 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
 # Patterns that indicate a column is a derived/computed metric rather than a
 # stored column — moving averages, exponential averages, RSI, rolling windows, etc.
 _DERIVABLE_PREFIXES = ("ma_", "sma_", "ema_", "rsi_", "macd_", "bb_", "atr_", "obv_")
+
+# Fundamental (income-statement / balance-sheet) metrics not present in the schema.
+# Questions that match these should be rejected before calling the LLM.
+_FUNDAMENTAL_PATTERN = re.compile(
+    r"\b("
+    r"earnings per share|eps"
+    r"|p/?e ratio|price[- ]to[- ]earnings"
+    r"|revenue|net income"
+    r"|operating (?:income|margin|profit)"
+    r"|ebitda|gross (?:profit|margin)"
+    r"|net margin|book value"
+    r"|free cash flow|cash flow from operations"
+    r"|return on equity|return on assets|\broa\b|\broe\b"
+    r"|dividend (?:yield|per share)"
+    r")\b",
+    re.IGNORECASE,
+)
 _DERIVABLE_SUFFIX = re.compile(r".*_\d+d$")  # e.g. vol_20d, ret_30d, ma_50d
 
 
@@ -133,7 +150,18 @@ class QueryAgent:
 
         Returns:
             Tuple of (QueryResult metadata, DataFrame of results).
+
+        Raises:
+            ValueError: If the question asks for a fundamental metric not in the schema.
         """
+        if _FUNDAMENTAL_PATTERN.search(question):
+            raise ValueError(
+                "This metric is not available in the dataset — no query was generated. "
+                "The schema covers prices, returns, volatility, Sharpe ratio, drawdown, "
+                "and sector aggregates. Income-statement metrics (EPS, revenue, margins, "
+                "P/E, earnings) are not ingested."
+            )
+
         domains = self._classify_domains(question)
         schema_prompt = self._schema.to_prompt(domains=domains)
 
@@ -379,6 +407,27 @@ class QueryAgent:
                 "ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma_50d. "
                 "Include ticker, date, and close in SELECT."
             )
+
+        # Detect LIMIT on the outer mart_equity_performance query — it truncates the time series.
+        # LIMIT is valid only inside CTEs (subqueries) for ranking/filtering tickers.
+        if re.search(r"\bmart_equity_performance\b", sql, re.IGNORECASE):
+            if re.search(r"\bLIMIT\s+\d+\s*$", sql.strip(), re.IGNORECASE):
+                raise ValueError(
+                    "Do not add LIMIT to the outer mart_equity_performance query — it truncates "
+                    "the time series. Remove LIMIT from the outer SELECT entirely. "
+                    "Only use LIMIT inside a CTE subquery to select which tickers to include. "
+                    "All table names MUST be fully qualified (schema.table). "
+                    "Example:\n"
+                    "  WITH top AS (\n"
+                    "    SELECT ticker FROM main_equity.mart_equity_screener\n"
+                    "    ORDER BY ytd_return DESC LIMIT 5\n"
+                    "  )\n"
+                    "  SELECT p.ticker, p.date, p.close, p.daily_return\n"
+                    "  FROM main_equity.mart_equity_performance p\n"
+                    "  JOIN top ON p.ticker = top.ticker\n"
+                    "  WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'\n"
+                    "  ORDER BY p.date ASC, p.ticker"
+                )
 
         return sql
 
