@@ -11,9 +11,10 @@ different table grains that cannot be combined in one query.
 NEVER split these — they are always ONE sub-question:
 - Any ranking/screening question: "top N", "best", "worst", "which stocks", "highest" \
   → one SQL with ORDER BY. Do NOT invent multiple interpretations (by market cap, by ROE).
-- Any comparison: "X vs Y", "X compared to Y", "relative to" → one SQL handles it.
-- Any time-series/trend question about a single entity: "how has X performed over Y", \
-  "price history", "over the last N months" → one SQL with a date range filter.
+- Any comparison: "X vs Y", "X compared to Y", "relative to", "compared to its Y" \
+  → one SQL handles it (e.g. price vs moving average is a single window-function query).
+- Any time-series/trend question about a single entity, including those with a derived \
+  metric ("price compared to its 50-day moving average", "vs its average") — still ONE query.
 - Any single-entity question about one stock, sector, or metric.
 - Any question with "and" describing related aspects of the same thing.
 - When in doubt: return one sub-question. Do not invent additional angles.

@@ -38,10 +38,18 @@ color_col rules:
 - Scatter charts: color_col = "ticker" or "sector" when available
 - Single-entity charts (one ticker filtered): color_col = null
 
-Set chartable=false when the data is not worth visualizing:
+Set chartable=true whenever the data has 3+ rows with at least one numeric column
+and at least one categorical or date column. The following MUST always produce a chart:
+- Any ranked list of stocks by any metric (ytd_return, volatility, sharpe, drawdown)
+- Any sector comparison (avg_ytd_return_ew, avg_volatility_20d, etc.)
+- Any time-series result (date column present with price/return data)
+- Any result with "top N" or "worst N" pattern
+
+Set chartable=false ONLY for:
 - 0 rows returned
-- Only a single scalar value
-- All columns are identifiers or text with no numeric metric
+- Exactly 1 row with 1 scalar value (a single aggregation with no grouping)
+- Columns are only SQL function names like avg("close") — indicates a mis-formed query
+- All columns are free-text with no numeric metric
 
 Column names in x_col, y_col, and color_col MUST be taken verbatim from \
 the column list — never invent or rename columns.

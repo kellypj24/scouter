@@ -74,6 +74,27 @@ _FALLBACK_SQL = (
 )
 
 
+def _clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename SQL-expression column names (e.g. avg("close")) to clean snake_case.
+
+    DuckDB and sqlglot sometimes produce column names that look like raw SQL
+    expressions when the LLM omits an alias. These break narrative agent chart
+    selection because the column name doesn't match any schema field.
+    """
+    _expr_re = re.compile(r'^(\w+)\s*\(["\'`]?(\w+)["\'`]?\)$')
+
+    def _clean(name: str) -> str:
+        m = _expr_re.match(name.strip())
+        if m:
+            return f"{m.group(1)}_{m.group(2)}"
+        return name
+
+    cleaned = {col: _clean(col) for col in df.columns}
+    if any(k != v for k, v in cleaned.items()):
+        df = df.rename(columns=cleaned)
+    return df
+
+
 class SQLResponse(BaseModel):
     """Structured LLM output for SQL generation."""
 
@@ -134,9 +155,24 @@ class QueryAgent:
             except ValueError as exc:
                 last_error = str(exc)
                 logger.warning("SQL generation attempt %d failed: %s", attempt + 1, exc)
+                # Don't retry for definitively unanswerable errors — a retry would only
+                # generate a wrong-domain substitution query.
+                if attempt == 0 and (
+                    re.search(r"Table '[\w.]+' not found in schema", last_error)
+                    or "not available in the dataset" in last_error
+                ):
+                    break
 
         if sql is None:
             if all_failures_schema and last_error:
+                # Table invented by LLM that doesn't exist → metric genuinely absent.
+                if re.search(r"Table '[\w.]+' not found in schema", last_error):
+                    raise ValueError(last_error)
+
+                # LLM signalled the metric is unavailable (returned empty sql).
+                if "not available in the dataset" in last_error:
+                    raise ValueError(last_error)
+
                 # Check whether the failing column exists anywhere in the schema.
                 # If it doesn't, the metric is genuinely absent → surface an informative
                 # error rather than misleading screener data.
@@ -159,21 +195,55 @@ class QueryAgent:
         return self._execute(sql)
 
     def _column_known_anywhere(self, col_name: str) -> bool:
-        """Return True if col_name exists in at least one table in the known schema."""
-        return any(col_name.lower() in cols for cols in self._column_lookup.values())
+        """Return True if col_name matches or is a clear prefix of any known column.
+
+        Prefix matching handles common abbreviations: 'sharpe' → 'sharpe_20d',
+        'volatility' → 'volatility_20d', so these aren't treated as truly absent.
+        """
+        lower = col_name.lower()
+        return any(
+            lower == c or c.startswith(lower + "_")
+            for cols in self._column_lookup.values()
+            for c in cols
+        )
 
     def _missing_column_error(self, col_name: str, db: str, tbl_name: str) -> str:
         """Build an error string for a missing column, including a hint if the column
         exists in another table so the LLM can correct its table selection on retry."""
+        available = ", ".join(sorted(self._column_lookup.get((db, tbl_name), set())))
+
+        # Screener is a snapshot — date filters are never needed and always wrong.
+        if col_name == "date" and "screener" in tbl_name:
+            return (
+                f"Column 'date' does not exist in {db}.{tbl_name}. "
+                f"mart_equity_screener is a current snapshot — there is NO date column, NO "
+                f"INTERVAL, and NO WHERE clause needed. Remove ALL WHERE conditions and "
+                f"use ORDER BY to rank results. "
+                f"Correct query: SELECT ticker, company_name, sector, ytd_return "
+                f"FROM main_equity.mart_equity_screener ORDER BY ytd_return DESC LIMIT 10. "
+                f"Available columns: {available}."
+            )
+
         tables_with_col = [
             f"{d}.{t}"
             for (d, t), cols in self._column_lookup.items()
             if col_name in cols
         ]
         hint = f" It is available in: {', '.join(tables_with_col)}." if tables_with_col else ""
-        available = ", ".join(sorted(self._column_lookup.get((db, tbl_name), set())))
+
+        # Suggest the correct full column name if a prefix match exists in the same table.
+        tbl_cols = self._column_lookup.get((db, tbl_name), set())
+        prefix_candidates = sorted(c for c in tbl_cols if c.startswith(col_name + "_"))
+        if prefix_candidates:
+            suggestion = (
+                f" Replace '{col_name}' with '{prefix_candidates[0]}'. "
+                f"Keep {db}.{tbl_name} as the table — it has this column."
+            )
+        else:
+            suggestion = ""
+
         return (
-            f"Column '{col_name}' does not exist in {db}.{tbl_name}.{hint} "
+            f"Column '{col_name}' does not exist in {db}.{tbl_name}.{hint}{suggestion} "
             f"Available columns in {tbl_name}: {available}."
         )
 
@@ -257,6 +327,8 @@ class QueryAgent:
         sql_response = (
             response if isinstance(response, SQLResponse) else SQLResponse.model_validate(response)
         )
+        if not sql_response.sql.strip():
+            raise ValueError("This metric is not available in the dataset — no query was generated.")
         sql = self._validate_sql(sql_response.sql)
         errors = self._validate_schema(sql)
         if errors:
@@ -282,7 +354,7 @@ class QueryAgent:
         sql = sql.strip().rstrip(";")
         if _BLOCKED.search(sql):
             raise ValueError(f"Generated SQL contains blocked statement: {sql[:120]}")
-        if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
+        if not re.match(r"^\s*(SELECT|WITH)\b", sql, re.IGNORECASE):
             raise ValueError(f"Generated SQL is not a SELECT: {sql[:120]}")
 
         try:
@@ -363,6 +435,19 @@ class QueryAgent:
                 if key in self._column_lookup and col_name not in self._column_lookup[key]:
                     errors.append(self._missing_column_error(col_name, db, tbl_name))
 
+        # Screener-specific: catch unqualified `date` references even in multi-table queries
+        # (e.g. WHERE date = (SELECT MAX(date) FROM dim_date) bypasses the single-table check).
+        screener_in_query = any(
+            "mart_equity_screener" in name for _, name in alias_to_table.values()
+        )
+        if screener_in_query:
+            for col in statement.find_all(exp.Column):
+                if col.name.lower() == "date" and not col.table:
+                    errors.append(
+                        self._missing_column_error("date", "main_equity", "mart_equity_screener")
+                    )
+                    break
+
         return errors
 
     def _execute(self, sql: str) -> tuple[QueryResult, pd.DataFrame]:
@@ -379,6 +464,7 @@ class QueryAgent:
         """
         relation = self._conn.execute(sql)
         df = relation.df()
+        df = _clean_column_names(df)
         result = QueryResult(
             sql=sql,
             row_count=len(df),
