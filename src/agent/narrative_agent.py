@@ -31,9 +31,9 @@ class NarrativeResponse(BaseModel):
     """Structured LLM output for narrative and chart generation."""
 
     chartable: bool
-    chart_type: str = ""
-    x_col: str = ""
-    y_col: str = ""
+    chart_type: str | None = None
+    x_col: str | None = None
+    y_col: str | None = None
     title: str = ""
     color_col: str | None = None
     prose: str
@@ -138,7 +138,7 @@ class NarrativeAgent:
 
         if response.chartable and response.chart_type in _VALID_CHART_TYPES:
             col_set = set(query_result.columns)
-            if response.x_col in col_set and response.y_col in col_set:
+            if response.x_col and response.y_col and response.x_col in col_set and response.y_col in col_set:
                 color_col = (
                     response.color_col
                     if response.color_col and response.color_col in col_set

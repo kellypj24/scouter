@@ -12,15 +12,19 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date
 from typing import Any
 
 import duckdb
 import pandas as pd
+import sqlglot
+import sqlglot.errors
 from pydantic import BaseModel
+from sqlglot import exp
 
 from src.agent.prompts.sql import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
-from src.data.schema import SchemaContext, load_schema_context
+from src.data.schema import SchemaContext, build_column_lookup, load_schema_context
 from src.models.response import QueryResult
 
 logger = logging.getLogger(__name__)
@@ -49,6 +53,18 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# Patterns that indicate a column is a derived/computed metric rather than a
+# stored column — moving averages, exponential averages, RSI, rolling windows, etc.
+_DERIVABLE_PREFIXES = ("ma_", "sma_", "ema_", "rsi_", "macd_", "bb_", "atr_", "obv_")
+_DERIVABLE_SUFFIX = re.compile(r".*_\d+d$")  # e.g. vol_20d, ret_30d, ma_50d
+
+
+def _is_derivable_metric(col_name: str) -> bool:
+    """Return True if col_name looks like a computable derived metric."""
+    lower = col_name.lower()
+    return lower.startswith(_DERIVABLE_PREFIXES) or bool(_DERIVABLE_SUFFIX.match(lower))
+
+
 # Fallback query when LLM fails — returns a useful default result.
 _FALLBACK_SQL = (
     "SELECT ticker, company_name, sector, ytd_return, volatility_20d, sharpe_20d "
@@ -56,6 +72,27 @@ _FALLBACK_SQL = (
     "ORDER BY ytd_return DESC "
     "LIMIT 20"
 )
+
+
+def _clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename SQL-expression column names (e.g. avg("close")) to clean snake_case.
+
+    DuckDB and sqlglot sometimes produce column names that look like raw SQL
+    expressions when the LLM omits an alias. These break narrative agent chart
+    selection because the column name doesn't match any schema field.
+    """
+    _expr_re = re.compile(r'^(\w+)\s*\(["\'`]?(\w+)["\'`]?\)$')
+
+    def _clean(name: str) -> str:
+        m = _expr_re.match(name.strip())
+        if m:
+            return f"{m.group(1)}_{m.group(2)}"
+        return name
+
+    cleaned = {col: _clean(col) for col in df.columns}
+    if any(k != v for k, v in cleaned.items()):
+        df = df.rename(columns=cleaned)
+    return df
 
 
 class SQLResponse(BaseModel):
@@ -83,6 +120,7 @@ class QueryAgent:
         self._provider = provider
         self._conn = conn
         self._schema = schema_context or load_schema_context(conn)
+        self._column_lookup = build_column_lookup(self._schema)
 
     async def run(self, question: str) -> tuple[QueryResult, pd.DataFrame]:
         """Translate a question into SQL, execute it, and return results.
@@ -100,21 +138,114 @@ class QueryAgent:
         schema_prompt = self._schema.to_prompt(domains=domains)
 
         sql: str | None = None
+        last_error: str | None = None
+        all_failures_schema = True  # flipped to False if any failure is an LLM error
+
         for attempt, prompt_domains in enumerate([domains, None]):
             if attempt == 1:
                 # Widen schema on retry — maybe classification was too narrow.
                 schema_prompt = self._schema.to_prompt(domains=prompt_domains)
             try:
-                sql = await self._generate_sql(question, schema_prompt)
+                sql = await self._generate_sql(question, schema_prompt, error_context=last_error)
                 break
-            except (LLMError, ValueError) as exc:
+            except LLMError as exc:
+                last_error = str(exc)
+                all_failures_schema = False
+                logger.warning("SQL generation attempt %d failed (LLM error): %s", attempt + 1, exc)
+            except ValueError as exc:
+                last_error = str(exc)
                 logger.warning("SQL generation attempt %d failed: %s", attempt + 1, exc)
+                # Don't retry for definitively unanswerable errors — a retry would only
+                # generate a wrong-domain substitution query.
+                if attempt == 0 and (
+                    re.search(r"Table '[\w.]+' not found in schema", last_error)
+                    or "not available in the dataset" in last_error
+                ):
+                    break
 
         if sql is None:
+            if all_failures_schema and last_error:
+                # Table invented by LLM that doesn't exist → metric genuinely absent.
+                if re.search(r"Table '[\w.]+' not found in schema", last_error):
+                    raise ValueError(last_error)
+
+                # LLM signalled the metric is unavailable (returned empty sql).
+                if "not available in the dataset" in last_error:
+                    raise ValueError(last_error)
+
+                # Check whether the failing column exists anywhere in the schema.
+                # If it doesn't, the metric is genuinely absent → surface an informative
+                # error rather than misleading screener data.
+                # If it does, the LLM chose the wrong table — screener fallback is fine.
+                col_match = re.search(r"Column '(\w+)' does not exist", last_error)
+                if col_match and not self._column_known_anywhere(col_match.group(1)):
+                    metric = col_match.group(1)
+                    if not _is_derivable_metric(metric):
+                        logger.info(
+                            "METRIC_MISSING question=%r metric=%r — "
+                            "consider adding to schema or upgrading model",
+                            question,
+                            metric,
+                        )
+                        raise ValueError(last_error)
+                    # Derivable metric (e.g. moving average) — fall through to screener fallback.
             logger.warning("Both LLM attempts failed — using rule-based fallback")
             sql = _FALLBACK_SQL
 
         return self._execute(sql)
+
+    def _column_known_anywhere(self, col_name: str) -> bool:
+        """Return True if col_name matches or is a clear prefix of any known column.
+
+        Prefix matching handles common abbreviations: 'sharpe' → 'sharpe_20d',
+        'volatility' → 'volatility_20d', so these aren't treated as truly absent.
+        """
+        lower = col_name.lower()
+        return any(
+            lower == c or c.startswith(lower + "_")
+            for cols in self._column_lookup.values()
+            for c in cols
+        )
+
+    def _missing_column_error(self, col_name: str, db: str, tbl_name: str) -> str:
+        """Build an error string for a missing column, including a hint if the column
+        exists in another table so the LLM can correct its table selection on retry."""
+        available = ", ".join(sorted(self._column_lookup.get((db, tbl_name), set())))
+
+        # Screener is a snapshot — date filters are never needed and always wrong.
+        if col_name == "date" and "screener" in tbl_name:
+            return (
+                f"Column 'date' does not exist in {db}.{tbl_name}. "
+                f"mart_equity_screener is a current snapshot — there is NO date column, NO "
+                f"INTERVAL, and NO WHERE clause needed. Remove ALL WHERE conditions and "
+                f"use ORDER BY to rank results. "
+                f"Correct query: SELECT ticker, company_name, sector, ytd_return "
+                f"FROM main_equity.mart_equity_screener ORDER BY ytd_return DESC LIMIT 10. "
+                f"Available columns: {available}."
+            )
+
+        tables_with_col = [
+            f"{d}.{t}"
+            for (d, t), cols in self._column_lookup.items()
+            if col_name in cols
+        ]
+        hint = f" It is available in: {', '.join(tables_with_col)}." if tables_with_col else ""
+
+        # Suggest the correct full column name if a prefix match exists in the same table.
+        tbl_cols = self._column_lookup.get((db, tbl_name), set())
+        prefix_candidates = sorted(c for c in tbl_cols if c.startswith(col_name + "_"))
+        if prefix_candidates:
+            suggestion = (
+                f" Replace '{col_name}' with '{prefix_candidates[0]}'. "
+                f"Keep {db}.{tbl_name} as the table — it has this column."
+            )
+        else:
+            suggestion = ""
+
+        return (
+            f"Column '{col_name}' does not exist in {db}.{tbl_name}.{hint}{suggestion} "
+            f"Available columns in {tbl_name}: {available}."
+        )
 
     def _classify_domains(self, question: str) -> list[str] | None:
         """Return relevant domain names based on question keywords.
@@ -133,24 +264,61 @@ class QueryAgent:
             matched = list(dict.fromkeys(["core"] + matched))
         return matched or None
 
-    async def _generate_sql(self, question: str, schema_prompt: str) -> str:
+    async def _generate_sql(
+        self,
+        question: str,
+        schema_prompt: str,
+        error_context: str | None = None,
+    ) -> str:
         """Call the LLM and return a validated SQL string.
+
+        On retry (error_context is set), appends the previous error as a
+        correction turn so the LLM can fix the specific issue.
 
         Args:
             question: Natural language question.
             schema_prompt: Schema context string for injection.
+            error_context: Error message from the previous attempt, if any.
 
         Returns:
-            Validated SQL string.
+            DuckDB-compatible, schema-validated SQL string.
 
         Raises:
             LLMError: If the provider call fails.
-            ValueError: If the returned SQL fails validation.
+            ValueError: If validation or schema checks fail.
         """
-        messages = [
-            {"role": "system", "content": SYSTEM.format(schema=schema_prompt)},
+        messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": SYSTEM.format(
+                    schema=schema_prompt,
+                    current_date=date.today().isoformat(),
+                ),
+            },
             {"role": "user", "content": USER.format(question=question)},
         ]
+        if error_context:
+            # If the error is about a derived metric, add an explicit window-function hint.
+            derived_hint = ""
+            col_match = re.search(r"Column '(\w+)' does not exist", error_context)
+            if col_match and _is_derivable_metric(col_match.group(1)):
+                derived_hint = (
+                    f"\n\nHINT: '{col_match.group(1)}' is a derived metric, not a stored column. "
+                    "Compute it with a SQL window function. Example for a 50-day moving average:\n"
+                    "  AVG(close) OVER (\n"
+                    "    PARTITION BY ticker ORDER BY date\n"
+                    "    ROWS BETWEEN 49 PRECEDING AND CURRENT ROW\n"
+                    "  ) AS ma_50d"
+                )
+            messages.append({"role": "assistant", "content": '{"sql": "...", "explanation": ""}'})
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"That query failed:\n\n{error_context}{derived_hint}\n\n"
+                    "Fix the SQL and respond with JSON only:\n"
+                    '{"sql": "<corrected SQL>", "explanation": "<one sentence>"}'
+                ),
+            })
         response: Any = await self._provider.complete_structured(
             messages,
             SQLResponse,
@@ -159,26 +327,143 @@ class QueryAgent:
         sql_response = (
             response if isinstance(response, SQLResponse) else SQLResponse.model_validate(response)
         )
-        return self._validate_sql(sql_response.sql)
+        if not sql_response.sql.strip():
+            raise ValueError("This metric is not available in the dataset — no query was generated.")
+        sql = self._validate_sql(sql_response.sql)
+        errors = self._validate_schema(sql)
+        if errors:
+            raise ValueError("\n".join(errors))
+        return sql
 
     def _validate_sql(self, sql: str) -> str:
-        """Sanitize and validate SQL before execution.
+        """Sanitize, transpile, and validate SQL before execution.
+
+        Transpiles via sqlglot (MySQL/generic → DuckDB) to fix LLM-generated
+        dialect mismatches (e.g. DATE_SUB, INTERVAL N MONTH). Then checks for
+        blocked DDL/DML statements.
 
         Args:
             sql: Raw SQL string from the LLM.
 
         Returns:
-            Cleaned SQL string.
+            DuckDB-compatible SQL string.
 
         Raises:
-            ValueError: If the SQL contains blocked statements.
+            ValueError: If the SQL contains blocked statements or fails to parse.
         """
         sql = sql.strip().rstrip(";")
         if _BLOCKED.search(sql):
             raise ValueError(f"Generated SQL contains blocked statement: {sql[:120]}")
-        if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
+        if not re.match(r"^\s*(SELECT|WITH)\b", sql, re.IGNORECASE):
             raise ValueError(f"Generated SQL is not a SELECT: {sql[:120]}")
+
+        try:
+            transpiled = sqlglot.transpile(sql, read="mysql", write="duckdb", pretty=False)
+            if transpiled:
+                sql = transpiled[0]
+                logger.debug("sqlglot transpiled SQL: %s", sql[:200])
+        except sqlglot.errors.SqlglotError as exc:
+            logger.warning("sqlglot could not transpile SQL (using as-is): %s", exc)
+
+        # Detect GROUP BY aggregate on performance without OVER — likely malformed moving average.
+        # AVG(close) GROUP BY date loses the date column from results, breaking chart generation.
+        if (
+            re.search(r"\bGROUP\s+BY\b", sql, re.IGNORECASE)
+            and re.search(r"\bAVG\s*\(", sql, re.IGNORECASE)
+            and not re.search(r"\bOVER\s*\(", sql, re.IGNORECASE)
+            and re.search(r"\bmart_equity_performance\b", sql, re.IGNORECASE)
+        ):
+            raise ValueError(
+                "AVG() with GROUP BY on mart_equity_performance is a malformed moving average. "
+                "Use a window function: AVG(close) OVER (PARTITION BY ticker ORDER BY date "
+                "ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma_50d. "
+                "Include ticker, date, and close in SELECT."
+            )
+
         return sql
+
+    def _validate_schema(self, sql: str) -> list[str]:
+        """Check SQL table and column references against the known schema.
+
+        Parses the SQL AST via sqlglot and verifies that:
+        - Fully-qualified tables (schema.table) exist in the schema.
+        - Columns qualified with a resolvable table alias exist in that table.
+        - Unqualified columns in simple single-table queries (no CTEs) exist in
+          that table.
+
+        Conservative: skips checks it cannot resolve without false positives
+        (multi-table unqualified columns, CTE aliases). Unparseable SQL returns
+        an empty list so execution can attempt it and fail naturally.
+
+        Args:
+            sql: Transpiled, DDL-validated SQL string.
+
+        Returns:
+            List of human-readable error strings; empty means validation passed.
+        """
+        try:
+            statement = sqlglot.parse_one(sql, dialect="duckdb")
+        except sqlglot.errors.SqlglotError:
+            return []
+
+        # CTE names are valid table references not in our schema — exclude them.
+        cte_names: set[str] = {
+            cte.alias.lower() for cte in statement.find_all(exp.CTE) if cte.alias
+        }
+        has_ctes = bool(cte_names)
+
+        # Build alias → (duckdb_schema, table_name) for every FROM/JOIN table.
+        alias_to_table: dict[str, tuple[str, str]] = {}
+        for tbl in statement.find_all(exp.Table):
+            if tbl.name.lower() in cte_names:
+                continue
+            db = (tbl.db or "").lower()
+            name = tbl.name.lower()
+            alias = (tbl.alias or tbl.name).lower()
+            alias_to_table[alias] = (db, name)
+            if tbl.alias:
+                alias_to_table[name] = (db, name)
+
+        errors: list[str] = []
+
+        # Check fully-qualified tables exist.
+        seen: set[tuple[str, str]] = set()
+        for db, name in alias_to_table.values():
+            key = (db, name)
+            if db and key not in seen and key not in self._column_lookup:
+                errors.append(f"Table '{db}.{name}' not found in schema.")
+            seen.add(key)
+
+        # Check column references.
+        for col in statement.find_all(exp.Column):
+            col_name = col.name.lower()
+            qualifier = (col.table or "").lower()
+
+            if qualifier and qualifier in alias_to_table:
+                db, tbl_name = alias_to_table[qualifier]
+                key = (db, tbl_name)
+                if key in self._column_lookup and col_name not in self._column_lookup[key]:
+                    errors.append(self._missing_column_error(col_name, db, tbl_name))
+            elif not qualifier and not has_ctes and len(alias_to_table) == 1:
+                (db, tbl_name) = next(iter(alias_to_table.values()))
+                key = (db, tbl_name)
+                if key in self._column_lookup and col_name not in self._column_lookup[key]:
+                    errors.append(self._missing_column_error(col_name, db, tbl_name))
+
+        # Screener-specific: catch unqualified `date` references even in multi-table queries
+        # (e.g. WHERE date = (SELECT MAX(date) FROM dim_date) bypasses the single-table check).
+        screener_in_query = any(
+            "mart_equity_screener" in name for _, name in alias_to_table.values()
+        )
+        if screener_in_query:
+            for col in statement.find_all(exp.Column):
+                if col.name.lower() == "date" and not col.table:
+                    errors.append(
+                        self._missing_column_error("date", "main_equity", "mart_equity_screener")
+                    )
+                    break
+
+        return errors
 
     def _execute(self, sql: str) -> tuple[QueryResult, pd.DataFrame]:
         """Execute SQL against DuckDB and return structured results.
@@ -194,6 +479,7 @@ class QueryAgent:
         """
         relation = self._conn.execute(sql)
         df = relation.df()
+        df = _clean_column_names(df)
         result = QueryResult(
             sql=sql,
             row_count=len(df),

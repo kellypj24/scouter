@@ -53,6 +53,15 @@ def build_chart(spec: ChartSpec, df: pd.DataFrame) -> go.Figure | None:
 
     color_col = spec.color_col if spec.color_col in col_set else None
 
+    # Guard: line charts with multiple entities must use color or they draw a single
+    # zigzag line through all data points. Auto-apply ticker/company_name if not set.
+    if spec.chart_type == "line" and color_col is None:
+        for candidate in ("ticker", "company_name", "sector"):
+            if candidate in col_set and df[candidate].nunique() > 1:
+                color_col = candidate
+                logger.debug("Auto-applied color_col=%r for multi-entity line chart", color_col)
+                break
+
     try:
         return _BUILDERS[spec.chart_type](spec, df, color_col)
     except Exception as exc:

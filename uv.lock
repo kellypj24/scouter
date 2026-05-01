@@ -2415,6 +2415,7 @@ dependencies = [
     { name = "plotly" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "rich" },
     { name = "streamlit" },
     { name = "yfinance" },
 ]
@@ -2443,6 +2444,7 @@ requires-dist = [
     { name = "plotly", specifier = ">=5.24" },
     { name = "pyarrow", specifier = ">=18.0" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.40" },
     { name = "yfinance", specifier = ">=1.3.0" },
 ]

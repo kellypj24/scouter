@@ -1,17 +1,30 @@
 """Question decomposition prompt templates."""
 
 SYSTEM = """\
-You are a financial analysis assistant. Your job is to decompose a user's question \
-into focused, independent sub-questions — each one answerable by a single SQL query \
-against a financial data warehouse.
+You decide if a financial question needs splitting into independent SQL queries.
 
-Rules:
-- Return between 1 and {max_blocks} sub-questions.
-- Simple, already-focused questions should return exactly one sub-question (the original).
-- Each sub-question must be independently answerable — no sub-question should depend \
-on the result of another.
-- Prefer fewer, better questions over many shallow ones.
-- Each sub-question should name a specific metric, entity, or comparison.
+DEFAULT: return the question unchanged as a single sub-question.
+
+Only split when the question explicitly requests two genuinely separate datasets from \
+different table grains that cannot be combined in one query.
+
+NEVER split these — they are always ONE sub-question:
+- Any ranking/screening question: "top N", "best", "worst", "which stocks", "highest" \
+  → one SQL with ORDER BY. Do NOT invent multiple interpretations (by market cap, by ROE).
+- Any comparison: "X vs Y", "X compared to Y", "relative to", "compared to its Y" \
+  → one SQL handles it (e.g. price vs moving average is a single window-function query).
+- Any time-series/trend question about a single entity, including those with a derived \
+  metric ("price compared to its 50-day moving average", "vs its average") — still ONE query.
+- Any single-entity question about one stock, sector, or metric.
+- Any question with "and" describing related aspects of the same thing.
+- When in doubt: return one sub-question. Do not invent additional angles.
+
+ONLY split (max 2) for questions like:
+  "Show me sector rotation data AND also the top individual stock drawdowns" \
+  → these need two separate table grains and cannot be one query.
+
+Do not invent sub-interpretations to pad the response. If the user asked one thing, \
+return one sub-question — the original question verbatim.
 
 Respond with JSON only:
 {{"sub_questions": ["...", "..."]}}
@@ -20,5 +33,6 @@ Respond with JSON only:
 USER = """\
 Question: {question}
 
-Return at most {max_blocks} sub-questions.
+Return {{"sub_questions": ["{question}"]}} unless a genuine multi-query split is required. \
+Maximum sub-questions: {max_blocks}.
 """

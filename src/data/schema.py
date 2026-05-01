@@ -171,6 +171,26 @@ def load_schema_context(conn: duckdb.DuckDBPyConnection | None = None) -> Schema
     return _context
 
 
+def build_column_lookup(ctx: SchemaContext) -> dict[tuple[str, str], set[str]]:
+    """Return a {(duckdb_schema, table_name): {column_names}} lookup from a SchemaContext.
+
+    Used by QueryAgent for pre-execution schema validation.
+
+    Args:
+        ctx: Loaded SchemaContext.
+
+    Returns:
+        Dict keyed by (lowercase duckdb schema, lowercase table name) with sets of
+        lowercase column names as values.
+    """
+    lookup: dict[tuple[str, str], set[str]] = {}
+    for model in ctx.models:
+        duckdb_schema = _SCHEMA_FOR_DOMAIN.get(model.domain, model.domain).lower()
+        key = (duckdb_schema, model.name.lower())
+        lookup[key] = {col.name.lower() for col in model.columns}
+    return lookup
+
+
 def get_schema_prompt(
     conn: duckdb.DuckDBPyConnection,
     domains: list[str] | None = None,
