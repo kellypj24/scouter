@@ -79,7 +79,7 @@ src/ (Python agent harness)      orchestrator → query agent → narrative agen
 ```
 
 `scripts/eval_runner.py` is the subprocess target — it must stay in place.
-`scripts/eval_score.py` is superseded by the Go runner for multi-fixture runs but kept as a reference.
+`scripts/eval_score.py` has been removed; the Go runner supersedes it.
 
 ## Data pipeline
 

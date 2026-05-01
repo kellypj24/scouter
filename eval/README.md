@@ -5,33 +5,26 @@ Exits with code 1 on any failure — suitable for CI.
 
 ## Usage
 
-Run from the **project root**:
-
-```bash
-# All fixtures, default concurrency (NumCPU)
-go run ./eval
-
-# Filter by fixture ID substring
-go run ./eval -filter screener
-go run ./eval -filter timeseries
-
-# Tune parallelism and per-fixture timeout
-go run ./eval -concurrency 4 -timeout 120s
-
-# Stop on first failure
-go run ./eval -fail-fast
-
-# Compile a binary
-go build -o eval/scouter-eval ./eval
-./eval/scouter-eval -filter screener
-```
-
-Or via just:
+Use `just` from the **project root** (recommended):
 
 ```bash
 just eval-go
 just eval-go-filter screener
 just eval-go-build
+```
+
+Or run Go directly — the `-root` flag tells the runner where the project root is:
+
+```bash
+# From the eval/ directory
+go run . -root ..
+go run . -root .. -filter screener
+go run . -root .. -concurrency 4 -timeout 120s
+go run . -root .. -fail-fast
+
+# Compile a binary, then run from project root
+go build -o scouter-eval .
+./scouter-eval -root ..
 ```
 
 ## How it works
@@ -67,12 +60,11 @@ All goroutines are waited on with a `sync.WaitGroup`. Results print in fixture-f
 eval/ (this package)           concurrent orchestrator — scores fixtures
     │  os/exec subprocess
     ▼
-scripts/eval_runner.py         still required — runs the full agent pipeline,
+scripts/eval_runner.py         required — runs the full agent pipeline and
                                outputs JSON that this package decodes
-
-scripts/eval_score.py          superseded for normal use; kept as reference
-                               (sequential Python scorer, same fixture format)
 ```
+
+`scripts/eval_score.py` has been removed; this package replaces it.
 
 ## Fixture format
 

@@ -139,16 +139,16 @@ assignments/
   templates/
   eval/
     fixtures.yaml       # Eval fixture definitions (question + expected properties)
-eval/                   # Go eval runner (replaces eval_score.py for multi-fixture runs)
+eval/                   # Go eval runner — replaces eval_score.py
   main.go               # CLI flags, semaphore-based goroutine dispatch
   runner.go             # Subprocess invocation + JSON parsing
   scorer.go             # Score RunResult against fixture expectations
+  scorer_test.go        # Unit tests for scorer and fixture loader
   fixtures.go           # Load fixtures.yaml
   report.go             # tabwriter summary table + failure details
   go.mod / go.sum
 scripts/
   eval_runner.py        # Single-question headless runner (JSON output — called by Go runner)
-  eval_score.py         # Python multi-fixture scorer (superseded by Go runner; kept as reference)
 ```
 
 ## Tooling
@@ -168,7 +168,7 @@ scripts/
 | `uv run python scripts/eval_score.py` | Python sequential scorer (reference / fallback) |
 
 The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess per fixture.
-`eval_runner.py` is still required. `eval_score.py` is superseded for normal use.
+`eval_runner.py` is required. `eval_score.py` has been deleted — use `just eval-go` instead.
 
 ## Key Patterns
 - **NarrativeBlock** — atomic response unit: `{question, sql, result_df, chart, prose, follow_ups}`

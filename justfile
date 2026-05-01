@@ -82,16 +82,16 @@ eval-charts:
 
 # Build the Go eval runner binary
 eval-go-build:
-    go build -o eval/scouter-eval ./eval
+    go -C eval build -o scouter-eval .
 
-# Run all eval fixtures concurrently using the Go runner (run from project root)
+# Run all eval fixtures concurrently using the Go runner
 eval-go *args:
-    go run ./eval {{ args }}
+    go -C eval run . -root `pwd` {{ args }}
 
 # Run Go eval fixtures matching a filter
 # Usage: just eval-go-filter screener
 eval-go-filter substr:
-    go run ./eval -filter {{ substr }}
+    go -C eval run . -root `pwd` -filter {{ substr }}
 
 # Clean build artifacts
 clean:

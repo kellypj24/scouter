@@ -56,8 +56,10 @@ func printSummary(results []FixtureResult) {
 			fr.ID, status, fr.Elapsed.Seconds(), failStr,
 		)
 
-		// Additional failure lines (indented under same row)
-		for _, f := range failures[1:] {
+		for i, f := range failures {
+			if i == 0 {
+				continue // already in the table row above
+			}
 			fmt.Fprintf(w, "\t\t\t%s\n", f)
 		}
 	}
