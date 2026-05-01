@@ -10,6 +10,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import duckdb
@@ -81,6 +82,23 @@ class Orchestrator:
 
         fallback_used = any(b.query_result.sql == _FALLBACK_SQL for b in blocks)
         return AgentResponse(blocks=blocks, fallback_used=fallback_used)
+
+    async def stream(self, request: AgentRequest) -> AsyncGenerator[NarrativeBlock, None]:
+        """Yield NarrativeBlocks one at a time as each sub-question completes.
+
+        Designed for SSE transport — the caller receives partial results immediately
+        rather than waiting for all blocks. Empty blocks are not filtered here; the
+        client decides what to render.
+
+        Args:
+            request: Incoming agent request with question and config.
+
+        Yields:
+            NarrativeBlock for each sub-question, in order.
+        """
+        sub_questions = await self._decompose(request.question, request.max_blocks)
+        for question in sub_questions:
+            yield await self._run_block(question)
 
     async def _decompose(self, question: str, max_blocks: int) -> list[str]:
         """Break a question into focused sub-questions via the LLM.

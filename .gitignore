@@ -53,3 +53,4 @@ Thumbs.db
 # Go binaries
 eval/scouter-eval
 eval/eval
+gateway/scouter-gateway
