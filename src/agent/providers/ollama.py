@@ -23,9 +23,9 @@ from src.agent.providers.base import (
 )
 
 DEFAULT_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "llama3.2"
-DEFAULT_SQL_MODEL = "codellama"
-DEFAULT_TIMEOUT = 30
+DEFAULT_MODEL = "qwen2.5:3b"
+DEFAULT_SQL_MODEL = "qwen2.5-coder:3b"
+DEFAULT_TIMEOUT = 60
 MAX_RETRIES = 3
 
 
@@ -139,7 +139,9 @@ class OllamaProvider:
             "model": model,
             "messages": augmented,
             "stream": False,
-            "format": "json",
+            # Pass the full JSON schema so Ollama uses grammar-constrained
+            # generation — guarantees output matches the schema structure.
+            "format": schema.model_json_schema(),
             "options": {
                 "temperature": kwargs.pop("temperature", 0.0),
                 "num_predict": kwargs.pop("num_predict", 1024),
