@@ -8,7 +8,7 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 
 **Developer Context**: Intermediate Python, advanced SQL/dbt, building toward production-grade agentic harness.
 
-**Stack**: Python 3.13, DuckDB, dbt-duckdb, Dagster, Ollama/Claude/Bedrock (pluggable), Plotly, Streamlit (PoC), uv, Docker
+**Stack**: Python 3.13, DuckDB, dbt-duckdb, Dagster, Ollama/Claude/Bedrock (pluggable), Plotly, Streamlit (PoC), Go 1.26 (eval runner), uv, Docker
 
 ## Current Status
 
@@ -137,6 +137,18 @@ assignments/
   active/
   completed/
   templates/
+  eval/
+    fixtures.yaml       # Eval fixture definitions (question + expected properties)
+eval/                   # Go eval runner (replaces eval_score.py for multi-fixture runs)
+  main.go               # CLI flags, semaphore-based goroutine dispatch
+  runner.go             # Subprocess invocation + JSON parsing
+  scorer.go             # Score RunResult against fixture expectations
+  fixtures.go           # Load fixtures.yaml
+  report.go             # tabwriter summary table + failure details
+  go.mod / go.sum
+scripts/
+  eval_runner.py        # Single-question headless runner (JSON output — called by Go runner)
+  eval_score.py         # Python multi-fixture scorer (superseded by Go runner; kept as reference)
 ```
 
 ## Tooling
@@ -145,6 +157,18 @@ assignments/
 - **Containers**: Docker Compose (app + Ollama + Dagster)
 - **Testing**: pytest >= 80% coverage
 - **Linting**: ruff check + ruff format + mypy
+
+### Eval commands
+| Command | What it does |
+|---------|-------------|
+| `just ask "question"` | Run one question through the full pipeline, rich terminal output |
+| `just eval-go` | Run all fixtures concurrently (Go runner) — primary eval command |
+| `just eval-go-filter screener` | Run fixtures whose ID contains a substring |
+| `just eval-go-build` | Compile Go runner to `eval/scouter-eval` binary |
+| `uv run python scripts/eval_score.py` | Python sequential scorer (reference / fallback) |
+
+The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess per fixture.
+`eval_runner.py` is still required. `eval_score.py` is superseded for normal use.
 
 ## Key Patterns
 - **NarrativeBlock** — atomic response unit: `{question, sql, result_df, chart, prose, follow_ups}`
