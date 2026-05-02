@@ -64,9 +64,9 @@ patterns:
     example_sql: |
       SELECT sector, sector_ytd_return, sector_rank_by_cumulative_return, ticker_count
       FROM main_sector.mart_sector_rotation
-      WHERE date = (SELECT MAX(date) FROM main_sector.mart_sector_rotation)
-      ORDER BY sector_ytd_return DESC
-    notes: Cross-sector YTD return — use sector_ytd_return (not ytd_return), filter to latest date
+      ORDER BY date DESC, sector_ytd_return DESC
+      LIMIT 11
+    notes: Cross-sector YTD return — use sector_ytd_return (not ytd_return), order by latest date first
     promoted_by: claude
     promoted_at: "2026-05-02"
 
