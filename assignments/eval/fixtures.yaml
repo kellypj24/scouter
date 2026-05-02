@@ -122,10 +122,9 @@ fixtures:
     expect:
       min_rows: 5
       max_blocks: 1
-      # fallback not asserted — "sectors performed best" is ambiguous for smaller models
-      # (stock-level screener vs sector aggregate); sector_ytd_ranked covers this stricter
+      # fallback and sql_table not asserted — question is ambiguous for smaller models;
+      # sector_ytd_ranked ("Rank all market sectors by YTD return") is the strict equivalent
       chart_type: bar
-      sql_table: mart_sector
 
   - id: sector_rotation
     question: "Show me sector rotation data for the last quarter"
@@ -213,7 +212,8 @@ fixtures:
       max_blocks: 1
       fallback: false
       chart_type: bar
-      sql_table: mart_risk_profile
+      # sql_table not asserted — mart_equity_screener also has drawdown_from_52w_high
+      # and sector filter; both screener and risk mart are valid choices here
 
   # ── Moving averages — additional coverage ────────────────────────────────
 
