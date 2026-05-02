@@ -25,51 +25,57 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 2**: `src/agent/narrative_agent.py` (LLM prose + chart inference), `src/viz/charts.py` (Plotly builders), `src/models/response.py` (NarrativeBlock), 15/15 eval fixtures passing
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
+- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, per-stage span logging); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 4 dbt analytical marts); event-based sensors replacing all cron schedules
 
-### What's next (Phase 5)
-- **Observability** (in progress on `feature/observability`): structured JSON logging throughout `src/`, request ID propagation FastAPI → orchestrator → agents, DuckDB-queryable log analysis
+### What's next (Phase 5 remaining)
 - Docker Compose for full stack (FastAPI + gateway + Streamlit + Ollama)
-- Answer quality round 2 (after observability gives data-driven targets):
+- Answer quality round 2 (use observability `mart_fallback_analysis` to identify highest-impact targets):
   - Multi-stock time-series: `mart_equity_performance` CTE pattern is fragile for 3+ stocks over 6+ months
   - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 20 fixtures)
   - Chart quality scoring: Go scorer validates chart presence but not `x_col`/`y_col` sensibility
-  - News integration: upgrade to tool-calling when using Anthropic provider (qwen2.5 tool support is unreliable)
+  - News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
 
 **Active work**: `assignments/active/`
 **Completed reference**: `assignments/completed/`
 
 ## Architecture
 
-Two distinct runtimes — keep them separate:
+Three distinct runtimes — keep them separate:
 
 ```
 ┌─────────────────────────────────────┐
 │  Dagster Pipeline (pipeline/)       │
-│  Ingest → dbt transform → DuckDB   │
-│  Runs on schedule / sensor trigger  │
+│  Sensors (event-based, no crons)   │
+│  data_freshness_sensor → ingest    │
+│  obs_log_sensor → obs sync         │
 └──────────────┬──────────────────────┘
-               │ writes
+               │ writes financial data
                ▼
-          DuckDB (data/)
-               │ reads
+          DuckDB (data/scouter.duckdb)
+               │ reads (read-only conn)
                ▼
 ┌─────────────────────────────────────┐
 │  Agent Harness (src/)               │
 │  User question → SQL → narrative   │
 │  Exposed via FastAPI SSE (api/)     │
-└──────────────┬──────────────────────┘
-               │ HTTP SSE
-               ▼
-┌─────────────────────────────────────┐
-│  Go Gateway (gateway/)              │
-│  Proxy + request ID + timing        │
-└──────────────┬──────────────────────┘
-               │ HTTP SSE
-               ▼
+│  Writes telemetry spans →          │
+└──────────┬───────────┬──────────────┘
+           │ HTTP SSE  │ writes (async, WAL)
+           ▼           ▼
+┌──────────────┐  SQLite (logs/scouter_logs.db)
+│  Go Gateway  │       │ Dagster ELT (obs_log_sensor)
+│  request ID  │       ▼
+└──────┬───────┘  DuckDB raw_observability schema
+       │ HTTP SSE      │ dbt transforms
+       ▼               ▼
 ┌─────────────────────────────────────┐
 │  Streamlit App (app/)               │
 │  httpx SSE client + artifact render │
 └─────────────────────────────────────┘
+       mart_fallback_analysis         ← answer quality targets
+       mart_stage_latency             ← bottleneck identification
+       mart_request_metrics           ← per-request audit
+       mart_pipeline_health           ← Dagster run history
 ```
 
 ## Constitution (Non-Negotiable Principles)
@@ -128,17 +134,24 @@ src/
   utils/
     tokens.py           # Token counting + truncation
     cache.py            # Response cache
+src/
+  observability/
+    context.py          # request_id ContextVar — set by middleware, flows to all coroutines
+    logger.py           # ObservabilityLogger — SQLite WAL writer, asyncio.to_thread, fire-and-forget
 pipeline/               # Dagster — data pipeline only, no LLM calls
   assets/
     ingestion.py        # Raw data → DuckDB asset
+    observability.py    # Syncs SQLite logs + Dagster run history → DuckDB raw_observability
     transformations.py  # @dbt_assets
   checks/
     freshness.py        # Asset freshness checks
   resources/
     connections.py      # DuckDB resource, dbt resource
   schedules/
-    daily.py            # Daily refresh schedule
-  sensors/              # Future: file arrival sensors
+    daily.py            # Empty — all triggers are sensor-based (kept as escape hatch)
+  sensors/
+    data_freshness.py   # Polls DuckDB every 30 min, fires when data ≥ 1 day stale
+    observability.py    # Watches SQLite mtime every 5 min, fires when log file changes
   __init__.py           # Dagster Definitions entry point
 app/
   main.py               # Streamlit app shell
@@ -196,7 +209,10 @@ The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess pe
 - **Async/await** for all LLM calls
 - **Pydantic** for all LLM response validation
 - **Schema injection** — always prepend DuckDB schema to SQL-generation prompts
-- **Dagster Definitions** pattern — `all_assets`, `all_checks`, `all_schedules` lists wired in `pipeline/__init__.py`
+- **Dagster Definitions** pattern — `all_assets`, `all_checks`, `all_schedules`, `all_sensors` lists wired in `pipeline/__init__.py`
+- **Event-based sensors** — no cron schedules; sensors gate on real conditions (file mtime, data age) and self-correct after machine sleep
+- **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises
+- **Observability read path** — Dagster ELT (SQLite → DuckDB) + dbt marts; same pattern scales to Postgres → Snowflake without changing downstream models
 - **EnvVar()** for all secrets in Dagster resources
 
 ## Data Architecture (Kimball Dimensional Model)
@@ -210,6 +226,12 @@ raw (DuckDB main schema)        yfinance ingestion via Dagster
                  equity/        mart_equity_performance, mart_equity_screener
                  sector/        mart_sector_rotation, mart_sector_fundamentals
                  risk/          mart_risk_profile, mart_drawdown
+
+raw_observability schema        SQLite + Dagster run history via observability_sync asset
+  └── staging (views)           stg_obs_requests, stg_obs_spans, stg_obs_dagster_runs
+       └── marts/
+            observability/      mart_request_metrics, mart_stage_latency,
+                                mart_fallback_analysis, mart_pipeline_health
 ```
 
 **LLM schema injection strategy**: The orchestrator classifies the user's question into a domain

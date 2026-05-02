@@ -9,7 +9,8 @@ Financial data narrative agent. Ask a question in plain English; Scouter generat
 - **Agent harness** — Python 3.13, Pydantic, async/await
 - **LLM providers** — Claude (Anthropic), Bedrock, Ollama (local) — swappable via `SCOUTER_LLM_PROVIDER`
 - **Data layer** — DuckDB + dbt dimensional model (equity / sector / risk marts)
-- **Pipeline** — Dagster (ingest + dbt transforms on schedule)
+- **Pipeline** — Dagster (ingest + dbt transforms, event-based sensors — no crons)
+- **Observability** — SQLite write store → Dagster ELT → DuckDB analytical marts (fallback rate, latency, pipeline health)
 - **UI** — Streamlit (PoC scaffolding; harness is UI-agnostic)
 - **Eval runner** — Go 1.26 (concurrent fixture execution)
 
@@ -56,9 +57,6 @@ just eval-go-filter timeseries
 
 # Tune concurrency / timeout
 go run ./eval -concurrency 4 -timeout 120s
-
-# Python sequential scorer (reference / fallback)
-uv run python scripts/eval_score.py
 ```
 
 The Go runner exits with code 1 if any fixture fails, making it CI-friendly.
@@ -79,16 +77,59 @@ src/ (Python agent harness)      orchestrator → query agent → narrative agen
 ```
 
 `scripts/eval_runner.py` is the subprocess target — it must stay in place.
-`scripts/eval_score.py` has been removed; the Go runner supersedes it.
 
 ## Data pipeline
 
 ```bash
-just pipeline      # Start Dagster dev server
-just ingest        # Ingest raw data into DuckDB
+just pipeline      # Start Dagster dev server (sensors activate automatically)
+just ingest        # Manually trigger raw data ingest
 just dbt           # Run dbt transformations
 just dbt-test      # Run dbt tests
 ```
+
+### Sensors (event-based, no crons)
+
+Dagster pipelines are driven by sensors rather than cron schedules. Sensors self-correct when the machine sleeps — no missed windows, no silent failures.
+
+| Sensor | Polls | Fires when |
+|--------|-------|-----------|
+| `data_freshness_sensor` | every 30 min | `historical_data` is ≥ 1 day stale |
+| `obs_log_sensor` | every 5 min | `logs/scouter_logs.db` file is modified |
+
+Both sensors start in `RUNNING` status so they activate as soon as `just pipeline` starts.
+
+## Observability
+
+Every request through the FastAPI service is instrumented end-to-end. Telemetry writes to SQLite (non-blocking, WAL mode) and is synced into DuckDB for SQL analysis via Dagster.
+
+### What's captured
+
+| Stage | Metrics |
+|-------|---------|
+| Request | question, domain, total latency, block count, fallback used |
+| `sql_gen` | per-attempt latency, success/failure, error message, SQL length |
+| `sql_exec` | latency, row count returned |
+| `narrative` | latency, success/failure, chart source (llm / inferred / none) |
+| `news` | latency, items fetched, success/failure |
+| Dagster runs | job name, status, duration, last success time |
+
+### Analytical marts (DuckDB, built by dbt)
+
+```sql
+-- Which domains trigger the most LLM fallbacks?
+SELECT * FROM main_observability.mart_fallback_analysis ORDER BY fallback_rate_pct DESC;
+
+-- Where is latency worst?
+SELECT * FROM main_observability.mart_stage_latency ORDER BY p95_latency_ms DESC;
+
+-- Full per-request view
+SELECT * FROM main_observability.mart_request_metrics ORDER BY started_at DESC LIMIT 20;
+
+-- Dagster pipeline health alongside answer quality
+SELECT * FROM main_observability.mart_pipeline_health;
+```
+
+Sync is triggered automatically by `obs_log_sensor` when the log file changes. To sync manually, trigger `observability_sync` from the Dagster UI after starting `just pipeline`.
 
 ## Development
 
@@ -120,3 +161,10 @@ Run `just eval-go-filter my_new_fixture` to validate it in isolation.
 1. Create `dbt/models/marts/<domain>/`
 2. Add schema config to `dbt_project.yml`
 3. Register the domain classifier in `src/agent/orchestrator.py`
+
+### Adding a new observability dimension
+
+1. Add the field to `ObservabilityLogger._sync_write_span` in `src/observability/logger.py`
+2. Call `await obs.log_span(..., new_field=value)` at the instrumentation point
+3. Add the column to `dbt/models/staging/stg_obs_spans.sql`
+4. Reference it in the relevant mart model
