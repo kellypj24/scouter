@@ -80,38 +80,44 @@ class TestRun:
         assert block.chart_spec.y_col == "ytd_return"
         assert block.chart_spec.title == "Returns"
 
-    async def test_not_chartable_omits_chart_spec(self, agent, mock_provider, query_result, data):
+    async def test_not_chartable_omits_chart_spec(self, agent, mock_provider):
+        # A single-row result (< 3 rows) is genuinely not chartable regardless of LLM signal.
+        single_row_result = QueryResult(sql="SELECT 1", row_count=1, columns=["ytd_return"])
+        single_row_data = pd.DataFrame({"ytd_return": [0.15]})
         mock_provider.complete_structured = AsyncMock(
             return_value=_make_response(chartable=False, prose="Single aggregate value returned.")
         )
-        block = await agent.run("Q", query_result, data)
+        block = await agent.run("Q", single_row_result, single_row_data)
         assert block.chart_spec is None
         assert block.prose == "Single aggregate value returned."
 
-    async def test_invalid_x_col_drops_chart_preserves_prose(
-        self, agent, mock_provider, query_result, data
-    ):
+    async def test_invalid_x_col_infers_valid_x_col(self, agent, mock_provider, query_result, data):
+        # Invalid x_col is silently replaced by inference; chart is still produced.
         mock_provider.complete_structured = AsyncMock(
             return_value=_make_response(x_col="nonexistent_col")
         )
         block = await agent.run("Q", query_result, data)
-        assert block.chart_spec is None
-        assert block.prose  # prose still present
+        assert block.chart_spec is not None
+        assert block.chart_spec.x_col in query_result.columns
+        assert block.prose  # prose preserved
 
-    async def test_invalid_y_col_drops_chart(self, agent, mock_provider, query_result, data):
+    async def test_invalid_y_col_infers_valid_y_col(self, agent, mock_provider, query_result, data):
+        # Invalid y_col is replaced by inference; chart is still produced.
         mock_provider.complete_structured = AsyncMock(return_value=_make_response(y_col="bad_col"))
         block = await agent.run("Q", query_result, data)
-        assert block.chart_spec is None
+        assert block.chart_spec is not None
+        assert block.chart_spec.y_col in query_result.columns
 
-    async def test_invalid_color_col_falls_back_to_none(
+    async def test_invalid_color_col_infers_color_col(
         self, agent, mock_provider, query_result, data
     ):
+        # Invalid color_col is ignored; inference auto-picks "sector" for a bar chart.
         mock_provider.complete_structured = AsyncMock(
             return_value=_make_response(color_col="not_a_column")
         )
         block = await agent.run("Q", query_result, data)
         assert block.chart_spec is not None
-        assert block.chart_spec.color_col is None
+        assert block.chart_spec.color_col == "sector"
 
     async def test_valid_color_col_propagated(self, agent, mock_provider, query_result, data):
         mock_provider.complete_structured = AsyncMock(
@@ -121,15 +127,20 @@ class TestRun:
         assert block.chart_spec is not None
         assert block.chart_spec.color_col == "sector"
 
-    async def test_invalid_chart_type_drops_chart(self, agent, mock_provider, query_result, data):
-        mock_provider.complete_structured = AsyncMock(return_value=_make_response(chart_type="pie"))
+    async def test_no_chart_type_infers_from_data_structure(
+        self, agent, mock_provider, query_result, data
+    ):
+        # When LLM omits chart_type, inference picks "bar" from categorical columns.
+        mock_provider.complete_structured = AsyncMock(return_value=_make_response(chart_type=None))
         block = await agent.run("Q", query_result, data)
-        assert block.chart_spec is None
+        assert block.chart_spec is not None
+        assert block.chart_spec.chart_type in {"bar", "line", "scatter", "area", "histogram"}
 
     async def test_llm_error_uses_fallback(self, agent, mock_provider, query_result, data):
+        # LLM failure produces a rule-based fallback with a chart inferred from the data.
         mock_provider.complete_structured = AsyncMock(side_effect=LLMError("timeout"))
         block = await agent.run("Top stocks?", query_result, data)
-        assert block.chart_spec is None
+        assert block.chart_spec is not None
         assert "5 rows" in block.prose or "5 row" in block.prose
 
     async def test_empty_dataframe_returns_empty_block(self, agent, query_result):

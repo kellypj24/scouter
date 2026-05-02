@@ -14,14 +14,14 @@ test:
 
 # Lint all code
 lint:
-    uv run ruff check src/ pipeline/ app/ tests/
-    uv run ruff format --check src/ pipeline/ app/ tests/
+    uv run ruff check src/ pipeline/ app/ api/ tests/
+    uv run ruff format --check src/ pipeline/ app/ api/ tests/
     uv run mypy src/ pipeline/
 
 # Format all code
 fmt:
-    uv run ruff check --fix src/ pipeline/ app/ tests/
-    uv run ruff format src/ pipeline/ app/ tests/
+    uv run ruff check --fix src/ pipeline/ app/ api/ tests/
+    uv run ruff format src/ pipeline/ app/ api/ tests/
 
 # Start Streamlit app
 run:
@@ -85,13 +85,39 @@ eval-go-build:
     go -C eval build -o scouter-eval .
 
 # Run all eval fixtures concurrently using the Go runner
-eval-go *args:
-    go -C eval run . -root `pwd` {{ args }}
+# Defaults: concurrency=3 (safe for local Ollama), timeout=3m
+eval-go concurrency="3" timeout="3m" *args:
+    go -C eval run . -root `pwd` -concurrency {{ concurrency }} -timeout {{ timeout }} {{ args }}
 
 # Run Go eval fixtures matching a filter
 # Usage: just eval-go-filter screener
-eval-go-filter substr:
-    go -C eval run . -root `pwd` -filter {{ substr }}
+eval-go-filter substr concurrency="3" timeout="3m":
+    go -C eval run . -root `pwd` -filter {{ substr }} -concurrency {{ concurrency }} -timeout {{ timeout }}
+
+# Start FastAPI harness service (port 8001)
+api:
+    uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
+
+# Build Go gateway binary
+gateway-build:
+    go -C gateway build -o scouter-gateway .
+
+# Run Go gateway (proxies to FastAPI on 8001, listens on 8080)
+gateway:
+    go -C gateway run . -port 8080 -upstream http://localhost:8001
+
+# Start full dev stack: FastAPI (8001) → gateway (8080) → Streamlit (8501)
+# Ctrl-C stops all three.
+serve:
+    #!/usr/bin/env bash
+    uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 &
+    API_PID=$!
+    sleep 1
+    go -C gateway run . -port 8080 -upstream http://localhost:8001 &
+    GW_PID=$!
+    trap "kill $API_PID $GW_PID 2>/dev/null" EXIT INT TERM
+    sleep 1
+    uv run streamlit run app/main.py
 
 # Clean build artifacts
 clean:

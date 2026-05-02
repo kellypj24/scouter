@@ -67,50 +67,54 @@ class RunResult:
 
 async def _run(question: str, chart_dir: Path | None) -> RunResult:
     provider = get_provider()
-    conn = get_read_connection()
-    orch = Orchestrator(
-        provider=provider,
-        query_agent=QueryAgent(provider=provider, conn=conn),
-        narrative_agent=NarrativeAgent(provider=provider),
-    )
-    response = await orch.run(AgentRequest(question=question))
+    try:
+        conn = get_read_connection()
+        orch = Orchestrator(
+            provider=provider,
+            query_agent=QueryAgent(provider=provider, conn=conn),
+            narrative_agent=NarrativeAgent(provider=provider),
+        )
+        response = await orch.run(AgentRequest(question=question))
 
-    blocks: list[BlockResult] = []
-    for i, block in enumerate(response.blocks):
-        spec = block.chart_spec
-        chart_built = False
-        chart_path = None
+        blocks: list[BlockResult] = []
+        for i, block in enumerate(response.blocks):
+            spec = block.chart_spec
+            chart_built = False
+            chart_path = None
 
-        if spec:
-            fig = build_chart(spec, block.data)
-            chart_built = fig is not None
-            if fig is not None and chart_dir is not None:
-                chart_dir.mkdir(parents=True, exist_ok=True)
-                slug = "".join(c if c.isalnum() else "_" for c in question[:40])
-                chart_path = str(chart_dir / f"{slug}_block{i}.html")
-                fig.write_html(chart_path)
+            if spec:
+                fig = build_chart(spec, block.data)
+                chart_built = fig is not None
+                if fig is not None and chart_dir is not None:
+                    chart_dir.mkdir(parents=True, exist_ok=True)
+                    slug = "".join(c if c.isalnum() else "_" for c in question[:40])
+                    chart_path = str(chart_dir / f"{slug}_block{i}.html")
+                    fig.write_html(chart_path)
 
-        blocks.append(BlockResult(
-            sub_question=block.question,
-            sql=block.query_result.sql,
-            row_count=block.query_result.row_count,
-            columns=block.query_result.columns,
-            chart_type=spec.chart_type if spec else None,
-            color_col=spec.color_col if spec else None,
-            x_col=spec.x_col if spec else None,
-            y_col=spec.y_col if spec else None,
-            chart_built=chart_built,
-            chart_path=chart_path,
-            prose=block.prose,
-            follow_ups=block.follow_ups,
-        ))
+            blocks.append(BlockResult(
+                sub_question=block.question,
+                sql=block.query_result.sql,
+                row_count=block.query_result.row_count,
+                columns=block.query_result.columns,
+                chart_type=spec.chart_type if spec else None,
+                color_col=spec.color_col if spec else None,
+                x_col=spec.x_col if spec else None,
+                y_col=spec.y_col if spec else None,
+                chart_built=chart_built,
+                chart_path=chart_path,
+                prose=block.prose,
+                follow_ups=block.follow_ups,
+            ))
 
-    return RunResult(
-        question=question,
-        block_count=len(blocks),
-        fallback_used=response.fallback_used,
-        blocks=blocks,
-    )
+        return RunResult(
+            question=question,
+            block_count=len(blocks),
+            fallback_used=response.fallback_used,
+            blocks=blocks,
+        )
+    finally:
+        if hasattr(provider, "close"):
+            await provider.close()
 
 
 def _render(result: RunResult) -> None:

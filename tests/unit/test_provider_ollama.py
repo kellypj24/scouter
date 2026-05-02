@@ -44,8 +44,8 @@ class TestInit:
         monkeypatch.delenv("OLLAMA_SQL_MODEL", raising=False)
         p = OllamaProvider()
         assert p.host == "http://localhost:11434"
-        assert p.model == "llama3.2"
-        assert p.sql_model == "codellama"
+        assert p.model == "qwen2.5:3b"
+        assert p.sql_model == "qwen2.5-coder:3b"
 
     def test_explicit_values(self):
         p = OllamaProvider(host="http://custom:11434", model="mistral", sql_model="phi3")
