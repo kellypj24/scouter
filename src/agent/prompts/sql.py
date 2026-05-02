@@ -13,6 +13,10 @@ Rules:
 - Qualify ambiguous column names with the table name.
 - Do not include a trailing semicolon.
 - Limit results to 100 rows unless the question asks for a specific count.
+  EXCEPTION: queries against mart_equity_performance must NEVER have a LIMIT on the
+  outer SELECT — time-series must return every row in the date range. LIMIT is only
+  allowed inside a CTE subquery used for ranking/filtering tickers. See the TIME-SERIES
+  and Multi-stock sections below for the correct patterns.
 
 DuckDB date arithmetic (use EXACTLY this syntax — other dialects will error):
 - Last N months: date >= CURRENT_DATE - INTERVAL '6 months'
@@ -71,7 +75,10 @@ SECTOR ("sector performance", "rotation", "by sector"):
     avg_sharpe_20d, avg_drawdown_from_52w_high, median_ytd_return, ticker_count,
     total_market_cap, avg_market_cap, pct_constituents_positive_ytd.
     NOTE: the YTD return column is avg_ytd_return_ew (NOT avg_ytd_return).
-  → main_sector.mart_sector_rotation for time-series sector data.
+    NEVER add a date/time filter — this table has NO date column. It is always the
+    current snapshot. Do not reference date, CURRENT_DATE, or INTERVAL here.
+  → main_sector.mart_sector_rotation for time-series sector data (has a date column).
+    Use this when the question asks about trend, history, or change over time for sectors.
 
 RISK — use the right table for the right metric:
   → "drawdown from 52-week high" or "worst drawdown" → main_equity.mart_equity_screener
