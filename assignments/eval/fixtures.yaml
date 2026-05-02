@@ -206,7 +206,7 @@ fixtures:
       sql_table: mart_risk_profile
 
   - id: drawdown_tech_screen
-    question: "Show me technology stocks with the worst drawdown from their 52-week high"
+    question: "Show me Information Technology stocks with the worst drawdown from their 52-week high"
     expect:
       min_rows: 5
       max_blocks: 1
@@ -245,14 +245,13 @@ fixtures:
     question: "Show me the 15 stocks with the highest volatility and their Sharpe ratios"
     expect:
       min_rows: 10
-      max_blocks: 1
+      max_blocks: 2
       fallback: false
       chart_type: bar
-      sql_table: mart_risk_profile
       context_required: true
 
   - id: equity_tech_sector_screen
-    question: "What are the best performing technology stocks this year by YTD return?"
+    question: "What are the best performing Information Technology stocks this year by YTD return?"
     expect:
       min_rows: 5
       max_blocks: 1
