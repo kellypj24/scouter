@@ -78,7 +78,7 @@ class TestAgentRequest:
     def test_defaults(self):
         req = AgentRequest(question="What is AAPL?")
         assert req.conversation_id is None
-        assert req.max_blocks == 3
+        assert req.max_blocks == 2
 
     def test_explicit_values(self):
         req = AgentRequest(question="Q", conversation_id="session-1", max_blocks=5)

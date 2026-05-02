@@ -83,7 +83,7 @@ class Orchestrator:
         fallback_used = any(b.query_result.sql == _FALLBACK_SQL for b in blocks)
         return AgentResponse(blocks=blocks, fallback_used=fallback_used)
 
-    async def stream(self, request: AgentRequest) -> AsyncGenerator[NarrativeBlock, None]:
+    async def stream(self, request: AgentRequest) -> AsyncGenerator[NarrativeBlock]:
         """Yield NarrativeBlocks one at a time as each sub-question completes.
 
         Designed for SSE transport — the caller receives partial results immediately
@@ -162,6 +162,7 @@ class Orchestrator:
 def _unanswerable_block(question: str, detail: str) -> NarrativeBlock:
     """NarrativeBlock returned when the requested metric is not in the schema."""
     import re as _re
+
     col_match = _re.search(r"Column '(\w+)' does not exist", detail)
     metric = col_match.group(1).replace("_", " ") if col_match else "that metric"
     return NarrativeBlock(
@@ -176,7 +177,7 @@ def _unanswerable_block(question: str, detail: str) -> NarrativeBlock:
             "Income-statement metrics (revenue, earnings, margins) are not currently ingested."
         ),
         follow_ups=[
-            f"What price and return data is available instead?",
+            "What price and return data is available instead?",
             "Which stocks have the highest YTD return?",
             "What does the volatility profile look like for this stock?",
         ],

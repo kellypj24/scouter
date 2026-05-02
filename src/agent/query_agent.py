@@ -253,9 +253,7 @@ class QueryAgent:
             )
 
         tables_with_col = [
-            f"{d}.{t}"
-            for (d, t), cols in self._column_lookup.items()
-            if col_name in cols
+            f"{d}.{t}" for (d, t), cols in self._column_lookup.items() if col_name in cols
         ]
         hint = f" It is available in: {', '.join(tables_with_col)}." if tables_with_col else ""
 
@@ -339,14 +337,16 @@ class QueryAgent:
                     "  ) AS ma_50d"
                 )
             messages.append({"role": "assistant", "content": '{"sql": "...", "explanation": ""}'})
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"That query failed:\n\n{error_context}{derived_hint}\n\n"
-                    "Fix the SQL and respond with JSON only:\n"
-                    '{"sql": "<corrected SQL>", "explanation": "<one sentence>"}'
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"That query failed:\n\n{error_context}{derived_hint}\n\n"
+                        "Fix the SQL and respond with JSON only:\n"
+                        '{"sql": "<corrected SQL>", "explanation": "<one sentence>"}'
+                    ),
+                }
+            )
         response: Any = await self._provider.complete_structured(
             messages,
             SQLResponse,
@@ -356,7 +356,9 @@ class QueryAgent:
             response if isinstance(response, SQLResponse) else SQLResponse.model_validate(response)
         )
         if not sql_response.sql.strip():
-            raise ValueError("This metric is not available in the dataset — no query was generated.")
+            raise ValueError(
+                "This metric is not available in the dataset — no query was generated."
+            )
         sql = self._validate_sql(sql_response.sql)
         errors = self._validate_schema(sql)
         if errors:
@@ -410,24 +412,25 @@ class QueryAgent:
 
         # Detect LIMIT on the outer mart_equity_performance query — it truncates the time series.
         # LIMIT is valid only inside CTEs (subqueries) for ranking/filtering tickers.
-        if re.search(r"\bmart_equity_performance\b", sql, re.IGNORECASE):
-            if re.search(r"\bLIMIT\s+\d+\s*$", sql.strip(), re.IGNORECASE):
-                raise ValueError(
-                    "Do not add LIMIT to the outer mart_equity_performance query — it truncates "
-                    "the time series. Remove LIMIT from the outer SELECT entirely. "
-                    "Only use LIMIT inside a CTE subquery to select which tickers to include. "
-                    "All table names MUST be fully qualified (schema.table). "
-                    "Example:\n"
-                    "  WITH top AS (\n"
-                    "    SELECT ticker FROM main_equity.mart_equity_screener\n"
-                    "    ORDER BY ytd_return DESC LIMIT 5\n"
-                    "  )\n"
-                    "  SELECT p.ticker, p.date, p.close, p.daily_return\n"
-                    "  FROM main_equity.mart_equity_performance p\n"
-                    "  JOIN top ON p.ticker = top.ticker\n"
-                    "  WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'\n"
-                    "  ORDER BY p.date ASC, p.ticker"
-                )
+        if re.search(r"\bmart_equity_performance\b", sql, re.IGNORECASE) and re.search(
+            r"\bLIMIT\s+\d+\s*$", sql.strip(), re.IGNORECASE
+        ):
+            raise ValueError(
+                "Do not add LIMIT to the outer mart_equity_performance query — it truncates "
+                "the time series. Remove LIMIT from the outer SELECT entirely. "
+                "Only use LIMIT inside a CTE subquery to select which tickers to include. "
+                "All table names MUST be fully qualified (schema.table). "
+                "Example:\n"
+                "  WITH top AS (\n"
+                "    SELECT ticker FROM main_equity.mart_equity_screener\n"
+                "    ORDER BY ytd_return DESC LIMIT 5\n"
+                "  )\n"
+                "  SELECT p.ticker, p.date, p.close, p.daily_return\n"
+                "  FROM main_equity.mart_equity_performance p\n"
+                "  JOIN top ON p.ticker = top.ticker\n"
+                "  WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'\n"
+                "  ORDER BY p.date ASC, p.ticker"
+            )
 
         return sql
 

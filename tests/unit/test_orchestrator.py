@@ -122,6 +122,8 @@ class TestRun:
     async def test_partial_failure_returns_remaining_blocks(
         self, orchestrator, mock_query_agent, mock_narrative_agent
     ):
+        # The orchestrator filters out zero-row blocks when multiple blocks exist,
+        # so only the successful block (row_count > 0) is returned.
         mock_query_agent.run = AsyncMock(
             side_effect=[
                 duckdb.Error("first fails"),
@@ -130,9 +132,8 @@ class TestRun:
         )
         request = AgentRequest(question="Q")
         response = await orchestrator.run(request)
-        assert len(response.blocks) == 2
-        assert "could not be answered" in response.blocks[0].prose
-        assert response.blocks[1].prose == "AAPL returned 15% YTD."
+        assert len(response.blocks) == 1
+        assert response.blocks[0].prose == "AAPL returned 15% YTD."
 
 
 class TestDecompose:

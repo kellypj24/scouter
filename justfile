@@ -85,13 +85,14 @@ eval-go-build:
     go -C eval build -o scouter-eval .
 
 # Run all eval fixtures concurrently using the Go runner
-eval-go *args:
-    go -C eval run . -root `pwd` {{ args }}
+# Defaults: concurrency=3 (safe for local Ollama), timeout=3m
+eval-go concurrency="3" timeout="3m" *args:
+    go -C eval run . -root `pwd` -concurrency {{ concurrency }} -timeout {{ timeout }} {{ args }}
 
 # Run Go eval fixtures matching a filter
 # Usage: just eval-go-filter screener
-eval-go-filter substr:
-    go -C eval run . -root `pwd` -filter {{ substr }}
+eval-go-filter substr concurrency="3" timeout="3m":
+    go -C eval run . -root `pwd` -filter {{ substr }} -concurrency {{ concurrency }} -timeout {{ timeout }}
 
 # Start FastAPI harness service (port 8001)
 api:

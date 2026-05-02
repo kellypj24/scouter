@@ -28,7 +28,9 @@ _MAX_SAMPLE_COLS = 8
 
 # Known date and categorical column names for chart inference.
 _DATE_COLS = frozenset({"date", "price_date", "trade_date", "period_date", "as_of_date"})
-_CAT_COLS = frozenset({"ticker", "company_name", "sector", "industry", "gics_sector", "gics_sub_industry"})
+_CAT_COLS = frozenset(
+    {"ticker", "company_name", "sector", "industry", "gics_sector", "gics_sub_industry"}
+)
 
 # Preferred y-axis columns in priority order for auto-inference.
 _PREFERRED_Y = (
@@ -244,9 +246,12 @@ def _infer_chart_spec(
             x_col = date_cols[0] if date_cols else None
         else:
             # Prefer named categorical columns; fall back to first non-numeric column.
-            x_col = cat_cols[0] if cat_cols else next(
-                (c for c in columns if c not in numeric_set), None
-            ) or (columns[0] if columns else None)
+            x_col = (
+                cat_cols[0]
+                if cat_cols
+                else next((c for c in columns if c not in numeric_set), None)
+                or (columns[0] if columns else None)
+            )
 
     # Determine y_col.
     y_col = preferred_y

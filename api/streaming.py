@@ -1,8 +1,21 @@
 """SSE serialization helpers for NarrativeBlock."""
 
 import json
+from datetime import date, datetime
+from typing import Any
+
+import pandas as pd
 
 from src.models.response import NarrativeBlock
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, o: Any) -> Any:
+        if isinstance(o, (pd.Timestamp, datetime)):
+            return o.isoformat()
+        if isinstance(o, date):
+            return o.isoformat()
+        return super().default(o)
 
 
 def serialize_block(block: NarrativeBlock) -> str:
@@ -26,5 +39,6 @@ def serialize_block(block: NarrativeBlock) -> str:
             "chart_spec": block.chart_spec.model_dump() if block.chart_spec else None,
             "prose": block.prose,
             "follow_ups": block.follow_ups,
-        }
+        },
+        cls=_Encoder,
     )
