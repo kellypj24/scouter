@@ -11,6 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 import pandas as pd
@@ -18,7 +19,10 @@ from pydantic import BaseModel, Field
 
 from src.agent.prompts.narrative import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
+from src.data.news import NewsItem
 from src.models.response import ChartSpec, NarrativeBlock, QueryResult
+
+_NewsFetcher = Callable[[list[str]], Awaitable[list[NewsItem]]]
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +71,18 @@ class NarrativeAgent:
 
     Args:
         provider: LLM provider (injected — never instantiated internally).
+        news_fetcher: Async callable that returns news headlines for a list of
+            tickers. Pass None to disable news (e.g. in tests). The composition
+            root (api/deps.py) wires in the real implementation.
     """
 
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        news_fetcher: _NewsFetcher | None = None,
+    ) -> None:
         self._provider = provider
+        self._news_fetcher = news_fetcher
 
     async def run(
         self,
@@ -91,18 +103,45 @@ class NarrativeAgent:
         if data.empty:
             return _empty_result_block(question, query_result, data)
 
+        news_context = await self._build_news_context(data)
+
         try:
-            response = await self._generate_narrative(question, query_result, data)
+            response = await self._generate_narrative(question, query_result, data, news_context)
             return self._assemble_block(question, query_result, data, response)
         except (LLMError, Exception) as exc:
             logger.warning("Narrative generation failed — using fallback: %s", exc)
             return _fallback_block(question, query_result, data)
+
+    async def _build_news_context(self, data: pd.DataFrame) -> str:
+        """Fetch and format news for tickers present in the result.
+
+        Returns an empty string if news is disabled, no tickers are present,
+        or the fetch fails for any reason.
+
+        Args:
+            data: Query result DataFrame.
+
+        Returns:
+            Formatted news context string, or "" if not applicable.
+        """
+        if self._news_fetcher is None:
+            return ""
+        tickers = _tickers_for_news(data)
+        if not tickers:
+            return ""
+        try:
+            items = await self._news_fetcher(tickers)
+            return _format_news_context(items)
+        except Exception as exc:
+            logger.debug("News context skipped: %s", exc)
+            return ""
 
     async def _generate_narrative(
         self,
         question: str,
         query_result: QueryResult,
         data: pd.DataFrame,
+        news_context: str = "",
     ) -> NarrativeResponse:
         """Call the LLM and return a validated NarrativeResponse.
 
@@ -110,6 +149,7 @@ class NarrativeAgent:
             question: Natural language question.
             query_result: SQL metadata.
             data: Query result DataFrame.
+            news_context: Formatted news headlines, or "" if unavailable.
 
         Returns:
             Validated NarrativeResponse.
@@ -117,6 +157,14 @@ class NarrativeAgent:
         Raises:
             LLMError: If the provider call fails.
         """
+        news_section = f"\n{news_context}\n" if news_context else ""
+        news_hint = (
+            " Since recent news is provided, include at least one follow-up that "
+            "connects a news event to the quantitative data (e.g. 'Show price "
+            "history since the earnings announcement')."
+            if news_context
+            else ""
+        )
         messages = [
             {"role": "system", "content": SYSTEM},
             {
@@ -127,6 +175,8 @@ class NarrativeAgent:
                     columns=", ".join(query_result.columns),
                     row_count=query_result.row_count,
                     sample=_data_sample(data),
+                    news_context=news_section,
+                    news_followup_hint=news_hint,
                 ),
             },
         ]
@@ -191,6 +241,40 @@ class NarrativeAgent:
 # ---------------------------------------------------------------------------
 # Helpers (module-level so they're independently testable)
 # ---------------------------------------------------------------------------
+
+_MAX_NEWS_TICKERS = 5
+
+
+def _tickers_for_news(data: pd.DataFrame) -> list[str]:
+    """Return the tickers to fetch news for, or [] if news is not applicable.
+
+    For screeners with many tickers, only the first few are used (they are
+    already sorted by the primary metric, so these are the most prominent).
+    """
+    if "ticker" not in data.columns:
+        return []
+    unique: list[str] = data["ticker"].dropna().unique().tolist()
+    return unique[:_MAX_NEWS_TICKERS]
+
+
+def _format_news_context(items: list[NewsItem]) -> str:
+    """Format a list of NewsItems into a compact prompt block."""
+    if not items:
+        return ""
+    by_ticker: dict[str, list[NewsItem]] = {}
+    for item in items:
+        by_ticker.setdefault(item.ticker, []).append(item)
+
+    lines = ["Recent news (last 7 days):"]
+    for ticker, ticker_items in by_ticker.items():
+        lines.append(f"\n{ticker}:")
+        for item in ticker_items:
+            date_str = item.published_at.strftime("%b %d")
+            pub = f" [{item.publisher}, {date_str}]" if item.publisher else f" [{date_str}]"
+            lines.append(f"  • {item.title}{pub}")
+            if item.summary and item.summary.strip() != item.title.strip():
+                lines.append(f"    {item.summary[:150]}")
+    return "\n".join(lines)
 
 
 def _infer_chart_spec(

@@ -5,6 +5,7 @@ from src.agent.orchestrator import Orchestrator
 from src.agent.providers.base import get_provider
 from src.agent.query_agent import QueryAgent
 from src.data.db import get_read_connection
+from src.data.news import fetch_news
 
 
 def get_orchestrator() -> Orchestrator:
@@ -22,5 +23,5 @@ def get_orchestrator() -> Orchestrator:
     return Orchestrator(
         provider=provider,
         query_agent=QueryAgent(provider=provider, conn=conn),
-        narrative_agent=NarrativeAgent(provider=provider),
+        narrative_agent=NarrativeAgent(provider=provider, news_fetcher=fetch_news),
     )

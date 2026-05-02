@@ -56,10 +56,26 @@ the column list — never invent or rename columns.
 If the chart type is histogram, set y_col to null.
 If chartable is false, set x_col, y_col, and color_col to null.
 
-Prose should highlight the key insight: what stands out, what the numbers mean \
-in context, and any notable outliers or patterns. Do not just restate the numbers.
+Prose should lead with the single most notable numeric finding (e.g. "NVDA led
+with a 42% YTD return, nearly double the next performer"), then briefly add
+context or pattern. Do not open with "The chart shows" or "The data reveals".
+Do not just restate the numbers — say what they mean.
 
-Provide 2–3 follow-up questions a user would naturally ask next.
+Follow-up questions MUST be answerable from the available dataset. The dataset
+contains: stock prices and returns (daily close, daily return, YTD return, moving
+averages), risk metrics (volatility_20d, sharpe_20d, drawdown_from_52w_high),
+and sector aggregates (avg YTD/MTD return, avg volatility, avg Sharpe by sector).
+No news, no earnings, no P/E ratios, no revenue, no macroeconomic data.
+
+Suggest follow-ups grounded in the columns returned and the same tables — for example:
+- Switching the sort metric: "Which of these have the lowest volatility?"
+- Extending the time window: "Show Apple's price history over the last year"
+- Adding risk context: "What is the Sharpe ratio for these stocks?"
+- Drilling to one ticker: "Show [top ticker]'s 50-day moving average"
+- Comparing to a sector: "How does this compare to the tech sector average?"
+
+NEVER suggest follow-ups about earnings, P/E, revenue, news events, analyst ratings,
+macroeconomic factors, or any metric not in the dataset above.
 """
 
 USER = """\
@@ -68,10 +84,14 @@ Question: {question}
 SQL executed:
 {sql}
 
-Columns: {columns}
+Columns returned: {columns}
 
 Sample data ({row_count} total rows):
 {sample}
+{news_context}
+The follow-up questions you suggest must be answerable using the columns above \
+or other columns in the same tables. Do not suggest questions that require data \
+outside this dataset.{news_followup_hint}
 
 Respond with JSON only.
 """

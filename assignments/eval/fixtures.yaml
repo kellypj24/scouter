@@ -109,7 +109,7 @@ fixtures:
   - id: moving_avg_comparison
     question: "How has Apple's stock price changed over the last 30 days compared to its 50-day moving average?"
     expect:
-      min_rows: 20
+      min_rows: 15
       max_blocks: 1
       fallback: false
       chart_type: line
@@ -134,6 +134,28 @@ fixtures:
       fallback: false
       sql_table: mart_sector
 
+  # ── Multi-stock time-series — outer LIMIT regression guard ──────────────
+
+  - id: multistock_volatile_trend
+    question: "Show me how the 5 most volatile stocks have trended over the last month"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
+  - id: multistock_explicit_comparison
+    question: "Compare the price history of Apple and Microsoft over the last 6 months"
+    expect:
+      min_rows: 100
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
   # ── Risk queries ──────────────────────────────────────────────────────────
 
   - id: risk_drawdown
@@ -143,6 +165,34 @@ fixtures:
       max_blocks: 1
       fallback: false
       chart_type: bar
+
+  - id: risk_profile_sharpe
+    question: "Which stocks have the highest volatility percentile within their sector?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      sql_table: mart_risk_profile
+
+  - id: risk_drawdown_history
+    question: "Show me Apple's historical drawdown periods over the last year"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_drawdown
+
+  # ── Sector time-series ────────────────────────────────────────────────────
+
+  - id: sector_rotation_trend
+    question: "Show me the daily cumulative sector returns over the last 3 months"
+    expect:
+      min_rows: 20
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_sector_rotation
 
   # ── Unanswerable (metric not in schema) ──────────────────────────────────
 

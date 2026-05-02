@@ -11,8 +11,11 @@ from src.agent.narrative_agent import (
     _data_sample,
     _empty_result_block,
     _fallback_block,
+    _format_news_context,
+    _tickers_for_news,
 )
 from src.agent.providers.base import LLMError
+from src.data.news import NewsItem
 from src.models.response import QueryResult
 
 
@@ -214,3 +217,100 @@ class TestFallbackBlock:
         df = pd.DataFrame({"name": ["Alice", "Bob"]})
         block = _fallback_block("Q", qr, df)
         assert block.prose
+
+
+class TestTickersForNews:
+    def test_returns_tickers_when_column_present(self, data):
+        result = _tickers_for_news(data)
+        assert set(result) == {"NVDA", "META", "AAPL", "MSFT", "AMZN"}
+
+    def test_returns_empty_when_no_ticker_column(self):
+        df = pd.DataFrame({"sector": ["Tech"], "avg_ytd_return_ew": [0.15]})
+        assert _tickers_for_news(df) == []
+
+    def test_caps_at_five_tickers(self):
+        df = pd.DataFrame({"ticker": [f"T{i}" for i in range(10)], "v": range(10)})
+        result = _tickers_for_news(df)
+        assert len(result) == 5
+
+    def test_excludes_nulls(self):
+        df = pd.DataFrame({"ticker": ["AAPL", None, "MSFT"], "v": [1, 2, 3]})
+        result = _tickers_for_news(df)
+        assert None not in result
+        assert len(result) == 2
+
+
+class TestFormatNewsContext:
+    def _make_item(self, ticker: str, title: str, publisher: str = "Reuters") -> NewsItem:
+        from datetime import UTC, datetime
+
+        return NewsItem(
+            ticker=ticker,
+            title=title,
+            summary="",
+            publisher=publisher,
+            published_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+
+    def test_returns_empty_for_no_items(self):
+        assert _format_news_context([]) == ""
+
+    def test_groups_by_ticker(self):
+        items = [
+            self._make_item("AAPL", "Apple news"),
+            self._make_item("MSFT", "Microsoft news"),
+        ]
+        result = _format_news_context(items)
+        assert "AAPL:" in result
+        assert "MSFT:" in result
+
+    def test_includes_title_and_publisher(self):
+        items = [self._make_item("AAPL", "Apple beats earnings", "Bloomberg")]
+        result = _format_news_context(items)
+        assert "Apple beats earnings" in result
+        assert "Bloomberg" in result
+
+    def test_includes_summary_when_different_from_title(self):
+        from datetime import UTC, datetime
+
+        item = NewsItem(
+            ticker="AAPL",
+            title="Apple Q2 earnings",
+            summary="Apple reported better-than-expected results driven by services revenue.",
+            publisher="Reuters",
+            published_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        result = _format_news_context([item])
+        assert "services revenue" in result
+
+
+class TestNewsInjection:
+    async def test_news_fetcher_called_when_set(self, mock_provider, query_result, data):
+        mock_provider.complete_structured = AsyncMock(return_value=_make_response())
+        mock_fetcher = AsyncMock(return_value=[])
+        agent = NarrativeAgent(provider=mock_provider, news_fetcher=mock_fetcher)
+        await agent.run("Q", query_result, data)
+        mock_fetcher.assert_called_once()
+
+    async def test_news_fetcher_not_called_when_none(self, mock_provider, query_result, data):
+        mock_provider.complete_structured = AsyncMock(return_value=_make_response())
+        agent = NarrativeAgent(provider=mock_provider, news_fetcher=None)
+        # Should complete without error and without touching any news fetcher
+        block = await agent.run("Q", query_result, data)
+        assert block.prose
+
+    async def test_news_fetcher_not_called_for_no_ticker_column(self, mock_provider):
+        mock_provider.complete_structured = AsyncMock(return_value=_make_response())
+        mock_fetcher = AsyncMock(return_value=[])
+        agent = NarrativeAgent(provider=mock_provider, news_fetcher=mock_fetcher)
+        no_ticker_qr = QueryResult(sql="SELECT 1", row_count=2, columns=["sector", "avg_ytd_return_ew"])
+        no_ticker_df = pd.DataFrame({"sector": ["Tech", "Finance"], "avg_ytd_return_ew": [0.15, 0.08]})
+        await agent.run("Q", no_ticker_qr, no_ticker_df)
+        mock_fetcher.assert_not_called()
+
+    async def test_news_fetch_failure_does_not_break_block(self, mock_provider, query_result, data):
+        mock_provider.complete_structured = AsyncMock(return_value=_make_response())
+        mock_fetcher = AsyncMock(side_effect=RuntimeError("network error"))
+        agent = NarrativeAgent(provider=mock_provider, news_fetcher=mock_fetcher)
+        block = await agent.run("Q", query_result, data)
+        assert block.prose  # still produces output

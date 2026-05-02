@@ -22,17 +22,18 @@ from pathlib import Path
 # Project root on sys.path so src/ imports work without editable install.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
-from rich import box
 
 from src.agent.narrative_agent import NarrativeAgent
 from src.agent.orchestrator import Orchestrator
 from src.agent.providers.base import get_provider
 from src.agent.query_agent import QueryAgent
 from src.data.db import get_read_connection
+from src.data.news import fetch_news
 from src.models.agent import AgentRequest
 from src.viz.charts import build_chart
 
@@ -72,7 +73,7 @@ async def _run(question: str, chart_dir: Path | None) -> RunResult:
         orch = Orchestrator(
             provider=provider,
             query_agent=QueryAgent(provider=provider, conn=conn),
-            narrative_agent=NarrativeAgent(provider=provider),
+            narrative_agent=NarrativeAgent(provider=provider, news_fetcher=fetch_news),
         )
         response = await orch.run(AgentRequest(question=question))
 
@@ -91,20 +92,22 @@ async def _run(question: str, chart_dir: Path | None) -> RunResult:
                     chart_path = str(chart_dir / f"{slug}_block{i}.html")
                     fig.write_html(chart_path)
 
-            blocks.append(BlockResult(
-                sub_question=block.question,
-                sql=block.query_result.sql,
-                row_count=block.query_result.row_count,
-                columns=block.query_result.columns,
-                chart_type=spec.chart_type if spec else None,
-                color_col=spec.color_col if spec else None,
-                x_col=spec.x_col if spec else None,
-                y_col=spec.y_col if spec else None,
-                chart_built=chart_built,
-                chart_path=chart_path,
-                prose=block.prose,
-                follow_ups=block.follow_ups,
-            ))
+            blocks.append(
+                BlockResult(
+                    sub_question=block.question,
+                    sql=block.query_result.sql,
+                    row_count=block.query_result.row_count,
+                    columns=block.query_result.columns,
+                    chart_type=spec.chart_type if spec else None,
+                    color_col=spec.color_col if spec else None,
+                    x_col=spec.x_col if spec else None,
+                    y_col=spec.y_col if spec else None,
+                    chart_built=chart_built,
+                    chart_path=chart_path,
+                    prose=block.prose,
+                    follow_ups=block.follow_ups,
+                )
+            )
 
         return RunResult(
             question=question,
@@ -127,11 +130,13 @@ def _render(result: RunResult) -> None:
     console.print(meta)
 
     for i, block in enumerate(result.blocks):
-        console.print(Panel(
-            f"[bold]{block.sub_question}[/bold]",
-            title=f"Block {i + 1}",
-            border_style="blue",
-        ))
+        console.print(
+            Panel(
+                f"[bold]{block.sub_question}[/bold]",
+                title=f"Block {i + 1}",
+                border_style="blue",
+            )
+        )
 
         # SQL
         if block.sql:
@@ -148,21 +153,30 @@ def _render(result: RunResult) -> None:
             (
                 f"[green]{block.chart_type}[/green]  "
                 f"x={block.x_col}  y={block.y_col}  color={block.color_col or '—'}"
-            ) if block.chart_type else "[dim]none[/dim]",
+            )
+            if block.chart_type
+            else "[dim]none[/dim]",
         )
         stats.add_row(
             "Chart built",
-            "[green]yes[/green]" if block.chart_built else (
+            "[green]yes[/green]"
+            if block.chart_built
+            else (
                 "[yellow]spec exists but build failed[/yellow]"
-                if block.chart_type else "[dim]—[/dim]"
+                if block.chart_type
+                else "[dim]—[/dim]"
             ),
         )
         if block.chart_path:
-            stats.add_row("Chart saved", f"[link file://{block.chart_path}]{block.chart_path}[/link]")
+            stats.add_row(
+                "Chart saved", f"[link file://{block.chart_path}]{block.chart_path}[/link]"
+            )
         console.print(stats)
 
         # Prose
-        console.print(f"[italic]{block.prose[:300]}{'…' if len(block.prose) > 300 else ''}[/italic]")
+        console.print(
+            f"[italic]{block.prose[:300]}{'…' if len(block.prose) > 300 else ''}[/italic]"
+        )
 
         # Quick pass/fail checks
         checks = _check_block(block)
@@ -184,16 +198,20 @@ def _check_block(block: BlockResult) -> list[tuple[str, bool, str]]:
         checks.append(("chart built", block.chart_built, ""))
         # Warn if multi-entity data lacks color
         if block.chart_type == "line" and block.color_col is None and block.row_count > 30:
-            checks.append((
-                "color_col set",
-                False,
-                "line chart with many rows and no color may be a multi-entity chart",
-            ))
+            checks.append(
+                (
+                    "color_col set",
+                    False,
+                    "line chart with many rows and no color may be a multi-entity chart",
+                )
+            )
     return checks
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a single question through the Scouter pipeline.")
+    parser = argparse.ArgumentParser(
+        description="Run a single question through the Scouter pipeline."
+    )
     parser.add_argument("question", help="Natural language question to evaluate")
     parser.add_argument(
         "--chart-dir",
@@ -212,10 +230,12 @@ def main() -> None:
     result = asyncio.run(_run(args.question, chart_dir))
 
     if args.json:
+
         def _serial(obj: object) -> object:
             if hasattr(obj, "__dataclass_fields__"):
                 return asdict(obj)  # type: ignore[arg-type]
             return str(obj)
+
         print(json.dumps(asdict(result), default=_serial, indent=2))
     else:
         _render(result)
