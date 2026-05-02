@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import date
 from typing import Any
 
@@ -26,6 +27,7 @@ from src.agent.prompts.sql import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
 from src.data.schema import SchemaContext, build_column_lookup, load_schema_context
 from src.models.response import QueryResult
+from src.observability.logger import get_obs_logger
 
 logger = logging.getLogger(__name__)
 
@@ -162,26 +164,55 @@ class QueryAgent:
                 "P/E, earnings) are not ingested."
             )
 
-        domains = self._classify_domains(question)
+        domains = self.classify_domains(question)
         schema_prompt = self._schema.to_prompt(domains=domains)
 
         sql: str | None = None
         last_error: str | None = None
         all_failures_schema = True  # flipped to False if any failure is an LLM error
 
+        obs = get_obs_logger()
         for attempt, prompt_domains in enumerate([domains, None]):
             if attempt == 1:
                 # Widen schema on retry — maybe classification was too narrow.
                 schema_prompt = self._schema.to_prompt(domains=prompt_domains)
+            t_gen = time.perf_counter()
             try:
                 sql = await self._generate_sql(question, schema_prompt, error_context=last_error)
+                gen_ms = int((time.perf_counter() - t_gen) * 1000)
+                await obs.log_span(
+                    "sql_gen",
+                    gen_ms,
+                    success=True,
+                    attempt=attempt + 1,
+                    domain=",".join(domains) if domains else "all",
+                    sql_length=len(sql),
+                )
                 break
             except LLMError as exc:
+                gen_ms = int((time.perf_counter() - t_gen) * 1000)
                 last_error = str(exc)
                 all_failures_schema = False
+                await obs.log_span(
+                    "sql_gen",
+                    gen_ms,
+                    success=False,
+                    attempt=attempt + 1,
+                    error=last_error,
+                    domain=",".join(domains) if domains else "all",
+                )
                 logger.warning("SQL generation attempt %d failed (LLM error): %s", attempt + 1, exc)
             except ValueError as exc:
+                gen_ms = int((time.perf_counter() - t_gen) * 1000)
                 last_error = str(exc)
+                await obs.log_span(
+                    "sql_gen",
+                    gen_ms,
+                    success=False,
+                    attempt=attempt + 1,
+                    error=last_error,
+                    domain=",".join(domains) if domains else "all",
+                )
                 logger.warning("SQL generation attempt %d failed: %s", attempt + 1, exc)
                 # Don't retry for definitively unanswerable errors — a retry would only
                 # generate a wrong-domain substitution query.
@@ -220,7 +251,11 @@ class QueryAgent:
             logger.warning("Both LLM attempts failed — using rule-based fallback")
             sql = _FALLBACK_SQL
 
-        return self._execute(sql)
+        t_exec = time.perf_counter()
+        result, df = self._execute(sql)
+        exec_ms = int((time.perf_counter() - t_exec) * 1000)
+        await obs.log_span("sql_exec", exec_ms, success=True, row_count=result.row_count)
+        return result, df
 
     def _column_known_anywhere(self, col_name: str) -> bool:
         """Return True if col_name matches or is a clear prefix of any known column.
@@ -273,7 +308,7 @@ class QueryAgent:
             f"Available columns in {tbl_name}: {available}."
         )
 
-    def _classify_domains(self, question: str) -> list[str] | None:
+    def classify_domains(self, question: str) -> list[str] | None:
         """Return relevant domain names based on question keywords.
 
         Returns None (= all domains) if no keywords match, so the LLM

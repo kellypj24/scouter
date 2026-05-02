@@ -10,6 +10,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -23,6 +24,8 @@ from src.agent.providers.base import LLMError, LLMProvider
 from src.agent.query_agent import _FALLBACK_SQL, QueryAgent
 from src.models.agent import AgentRequest, AgentResponse
 from src.models.response import NarrativeBlock, QueryResult
+from src.observability.context import request_id_var
+from src.observability.logger import get_obs_logger
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,13 @@ class Orchestrator:
         Returns:
             AgentResponse with one NarrativeBlock per sub-question.
         """
+        obs = get_obs_logger()
+        rid = request_id_var.get()
+        t0 = time.perf_counter()
+        domains = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(domains) if domains else "all"
+        await obs.start_request(rid, request.question, domain=domain_str)
+
         sub_questions = await self._decompose(request.question, request.max_blocks)
 
         blocks: list[NarrativeBlock] = []
@@ -81,6 +91,8 @@ class Orchestrator:
                 blocks = populated
 
         fallback_used = any(b.query_result.sql == _FALLBACK_SQL for b in blocks)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        await obs.finish_request(rid, len(blocks), fallback_used, latency_ms)
         return AgentResponse(blocks=blocks, fallback_used=fallback_used)
 
     async def stream(self, request: AgentRequest) -> AsyncGenerator[NarrativeBlock]:
@@ -96,9 +108,25 @@ class Orchestrator:
         Yields:
             NarrativeBlock for each sub-question, in order.
         """
+        obs = get_obs_logger()
+        rid = request_id_var.get()
+        t0 = time.perf_counter()
+        domains = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(domains) if domains else "all"
+        await obs.start_request(rid, request.question, domain=domain_str)
+
         sub_questions = await self._decompose(request.question, request.max_blocks)
+        blocks_yielded = 0
+        fallback_used = False
         for question in sub_questions:
-            yield await self._run_block(question)
+            block = await self._run_block(question)
+            if block.query_result.sql == _FALLBACK_SQL:
+                fallback_used = True
+            blocks_yielded += 1
+            yield block
+
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        await obs.finish_request(rid, blocks_yielded, fallback_used, latency_ms)
 
     async def _decompose(self, question: str, max_blocks: int) -> list[str]:
         """Break a question into focused sub-questions via the LLM.
@@ -123,15 +151,32 @@ class Orchestrator:
                 "content": USER.format(question=question, max_blocks=max_blocks),
             },
         ]
+        obs = get_obs_logger()
+        t_decompose = time.perf_counter()
         try:
             raw: Any = await self._provider.complete_structured(messages, DecompositionResponse)
             if isinstance(raw, DecompositionResponse):
                 result = raw
             else:
                 result = DecompositionResponse.model_validate(raw)
-            # Trim to max_blocks in case the LLM ignored the limit.
-            return result.sub_questions[:max_blocks]
+            sub_questions = result.sub_questions[:max_blocks]
+            decompose_ms = int((time.perf_counter() - t_decompose) * 1000)
+            await obs.log_span(
+                "decompose",
+                decompose_ms,
+                success=True,
+                sub_question_count=len(sub_questions),
+            )
+            return sub_questions
         except (LLMError, Exception) as exc:
+            decompose_ms = int((time.perf_counter() - t_decompose) * 1000)
+            await obs.log_span(
+                "decompose",
+                decompose_ms,
+                success=False,
+                error=str(exc),
+                sub_question_count=1,
+            )
             logger.warning("Decomposition failed — treating as single question: %s", exc)
             return [question]
 

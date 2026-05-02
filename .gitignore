@@ -24,6 +24,10 @@ data/*.duckdb
 data/*.db
 !data/.gitkeep
 
+# Observability logs (SQLite — keep .gitkeep)
+logs/*.db
+!logs/.gitkeep
+
 # dbt
 dbt/target/
 dbt/dbt_packages/

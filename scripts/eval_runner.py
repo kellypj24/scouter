@@ -35,6 +35,7 @@ from src.agent.query_agent import QueryAgent
 from src.data.db import get_read_connection
 from src.data.news import fetch_news
 from src.models.agent import AgentRequest
+from src.observability.context import request_id_var
 from src.viz.charts import build_chart
 
 console = Console()
@@ -66,7 +67,16 @@ class RunResult:
     blocks: list[BlockResult]
 
 
-async def _run(question: str, chart_dir: Path | None) -> RunResult:
+async def _run(question: str, chart_dir: Path | None, fixture_id: str | None = None) -> RunResult:
+    # Tag this run in the observability database so eval fixture runs are
+    # distinguishable from prod requests in mart_request_metrics and
+    # mart_fallback_analysis. Prefix "eval_" allows simple filtering:
+    #   WHERE request_id LIKE 'eval_%'
+    import uuid
+
+    rid = f"eval_{fixture_id}_{uuid.uuid4().hex[:8]}" if fixture_id else f"eval_{uuid.uuid4().hex}"
+    request_id_var.set(rid)
+
     provider = get_provider()
     try:
         conn = get_read_connection()
@@ -224,10 +234,16 @@ def main() -> None:
         action="store_true",
         help="Print machine-readable JSON instead of rich output",
     )
+    parser.add_argument(
+        "--fixture-id",
+        metavar="ID",
+        default=None,
+        help="Fixture ID to tag this run in the observability database (set by Go eval runner)",
+    )
     args = parser.parse_args()
 
     chart_dir = Path(args.chart_dir) if args.chart_dir else None
-    result = asyncio.run(_run(args.question, chart_dir))
+    result = asyncio.run(_run(args.question, chart_dir, fixture_id=args.fixture_id))
 
     if args.json:
 
