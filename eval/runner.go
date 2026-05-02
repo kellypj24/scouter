@@ -28,6 +28,7 @@ type RunResult struct {
 	Question     string        `json:"question"`
 	BlockCount   int           `json:"block_count"`
 	FallbackUsed bool          `json:"fallback_used"`
+	ContextUsed  bool          `json:"context_used"` // true when learned_patterns.yaml injected examples
 	Blocks       []BlockResult `json:"blocks"`
 }
 

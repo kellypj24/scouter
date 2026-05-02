@@ -59,6 +59,20 @@ func score(run *RunResult, ex Expect) []CheckResult {
 		))
 	}
 
+	// Context used — validates that learned_patterns.yaml injected few-shot examples
+	if ex.ContextRequired {
+		checks = append(checks, check(
+			"context_used",
+			run.ContextUsed,
+			func() string {
+				if !run.ContextUsed {
+					return "expected few-shot context injection (learned_patterns.yaml may be empty or missing)"
+				}
+				return ""
+			}(),
+		))
+	}
+
 	// Unanswerable — expect all blocks have 0 rows and at least one has no SQL
 	if ex.Unanswerable {
 		allEmpty := true

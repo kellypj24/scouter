@@ -135,10 +135,13 @@ Schema injection (updated)
 - `context.py` caches at startup, `invalidate_cache()` for programmatic refresh
 - Promotion workflow documented in `assignments/README.md` section
 
-### 7. Eval harness integration — TODO
-- Add new eval fixtures targeting high-fallback domains (use `mart_fallback_analysis` after first prod runs)
-- Add Go scorer check for `context_used` flag
-- Target: eval pass rate does not regress from baseline
+### 7. Eval harness integration ✓
+- 7 new fixtures added (drawdown x2, moving average, sector monthly rotation, context_required x3)
+- Total: 27 fixtures (was 20)
+- `context_used` field added to Python `RunResult` + Go `RunResult`
+- `context_required` field added to Go `Expect` struct + YAML
+- `context_used` scorer check in `scorer.go`
+- Go builds clean, 11 Go tests pass, 244 Python tests pass, coverage holds at 80%
 
 ### 8. Docs + cleanup ✓
 - Updated: `pipeline/README.md`, `pipeline/assets/README.md`, `pipeline/sensors/README.md`
