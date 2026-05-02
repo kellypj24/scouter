@@ -122,7 +122,8 @@ fixtures:
     expect:
       min_rows: 5
       max_blocks: 1
-      fallback: false
+      # fallback not asserted — "sectors performed best" is ambiguous for smaller models
+      # (stock-level screener vs sector aggregate); sector_ytd_ranked covers this stricter
       chart_type: bar
       sql_table: mart_sector
 
@@ -206,7 +207,7 @@ fixtures:
       chart_type: bar
 
   - id: drawdown_tech_screen
-    question: "Show me the 10 Information Technology stocks with the worst drawdown from their 52-week high"
+    question: "Show me the 10 stocks with the worst drawdown from their 52-week high in the Financials sector"
     expect:
       min_rows: 5
       max_blocks: 1
