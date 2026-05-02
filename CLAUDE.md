@@ -25,7 +25,7 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 2**: `src/agent/narrative_agent.py` (LLM prose + chart inference), `src/viz/charts.py` (Plotly builders), `src/models/response.py` (NarrativeBlock), 15/15 eval fixtures passing
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
-- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, per-stage span logging); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side
+- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side
 
 ### What's next (Phase 5 remaining)
 - Docker Compose for full stack (FastAPI + gateway + Streamlit + Ollama)
@@ -215,7 +215,7 @@ The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess pe
 - **Schema injection** — always prepend DuckDB schema to SQL-generation prompts
 - **Dagster Definitions** pattern — `all_assets`, `all_checks`, `all_schedules`, `all_sensors` lists wired in `pipeline/__init__.py`
 - **Event-based sensors** — no cron schedules; sensors gate on real conditions (file mtime, data age) and self-correct after machine sleep
-- **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises
+- **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises. All 5 stages logged: `decompose` (sub_question_count), `sql_gen` (domain, sql_length, attempt), `sql_exec` (row_count), `narrative` (chart_source), `news` (news_items). Domain captured at both request and span level via `QueryAgent.classify_domains()`.
 - **Observability read path** — Dagster ELT (SQLite → DuckDB) + dbt marts; same pattern scales to Postgres → Snowflake without changing downstream models
 - **dbt test results** — written directly to DuckDB by `dbt_test_runner` (Dagster process owns the write connection; no SQLite hop needed)
 - **Eval tagging** — `eval_runner.py` prefixes `request_id` with `eval_{fixture_id}_` so fixture runs are queryable alongside prod traffic in all observability marts

@@ -75,8 +75,10 @@ SECTOR ("sector performance", "rotation", "by sector"):
     avg_sharpe_20d, avg_drawdown_from_52w_high, median_ytd_return, ticker_count,
     total_market_cap, avg_market_cap, pct_constituents_positive_ytd.
     NOTE: the YTD return column is avg_ytd_return_ew (NOT avg_ytd_return).
-    NEVER add a date/time filter — this table has NO date column. It is always the
-    current snapshot. Do not reference date, CURRENT_DATE, or INTERVAL here.
+    NEVER add a date/time filter — this table has NO date, year, month, or any
+    time-dimension column whatsoever. It is always the current snapshot.
+    Do not reference date, year, CURRENT_DATE, EXTRACT, or INTERVAL here.
+    The above columns are the ONLY columns — do not invent others.
   → main_sector.mart_sector_rotation for time-series sector data (has a date column).
     Use this when the question asks about trend, history, or change over time for sectors.
 
@@ -85,7 +87,11 @@ RISK — use the right table for the right metric:
     (drawdown_from_52w_high column is pre-computed per ticker)
   → "historical drawdown periods", "days in drawdown", "running peak" → main_risk.mart_drawdown
     (columns: drawdown_from_peak, drawdown_from_year_high, is_in_drawdown, running_peak)
-  → "Sharpe ratio", "volatility profile", "risk score" → main_risk.mart_risk_profile
+  → "Sharpe ratio", "volatility profile", "risk score", percentile comparisons
+    → main_risk.mart_risk_profile
+    This table contains percentile columns: volatility_pctile_in_sector,
+    sharpe_pctile_in_sector, risk_score. These columns do NOT exist in
+    mart_equity_screener — do not look for them there.
 
 NEVER query: fct_daily_prices, dim_company, dim_date, or main_intermediate.* tables.
 NEVER query mart_equity_performance without a WHERE clause on date or ticker — it returns 600k+ rows.

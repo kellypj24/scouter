@@ -71,7 +71,9 @@ class Orchestrator:
         obs = get_obs_logger()
         rid = request_id_var.get()
         t0 = time.perf_counter()
-        await obs.start_request(rid, request.question)
+        domains = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(domains) if domains else "all"
+        await obs.start_request(rid, request.question, domain=domain_str)
 
         sub_questions = await self._decompose(request.question, request.max_blocks)
 
@@ -109,7 +111,9 @@ class Orchestrator:
         obs = get_obs_logger()
         rid = request_id_var.get()
         t0 = time.perf_counter()
-        await obs.start_request(rid, request.question)
+        domains = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(domains) if domains else "all"
+        await obs.start_request(rid, request.question, domain=domain_str)
 
         sub_questions = await self._decompose(request.question, request.max_blocks)
         blocks_yielded = 0
@@ -147,15 +151,32 @@ class Orchestrator:
                 "content": USER.format(question=question, max_blocks=max_blocks),
             },
         ]
+        obs = get_obs_logger()
+        t_decompose = time.perf_counter()
         try:
             raw: Any = await self._provider.complete_structured(messages, DecompositionResponse)
             if isinstance(raw, DecompositionResponse):
                 result = raw
             else:
                 result = DecompositionResponse.model_validate(raw)
-            # Trim to max_blocks in case the LLM ignored the limit.
-            return result.sub_questions[:max_blocks]
+            sub_questions = result.sub_questions[:max_blocks]
+            decompose_ms = int((time.perf_counter() - t_decompose) * 1000)
+            await obs.log_span(
+                "decompose",
+                decompose_ms,
+                success=True,
+                sub_question_count=len(sub_questions),
+            )
+            return sub_questions
         except (LLMError, Exception) as exc:
+            decompose_ms = int((time.perf_counter() - t_decompose) * 1000)
+            await obs.log_span(
+                "decompose",
+                decompose_ms,
+                success=False,
+                error=str(exc),
+                sub_question_count=1,
+            )
             logger.warning("Decomposition failed — treating as single question: %s", exc)
             return [question]
 

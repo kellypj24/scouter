@@ -164,7 +164,7 @@ class QueryAgent:
                 "P/E, earnings) are not ingested."
             )
 
-        domains = self._classify_domains(question)
+        domains = self.classify_domains(question)
         schema_prompt = self._schema.to_prompt(domains=domains)
 
         sql: str | None = None
@@ -194,14 +194,24 @@ class QueryAgent:
                 last_error = str(exc)
                 all_failures_schema = False
                 await obs.log_span(
-                    "sql_gen", gen_ms, success=False, attempt=attempt + 1, error=last_error
+                    "sql_gen",
+                    gen_ms,
+                    success=False,
+                    attempt=attempt + 1,
+                    error=last_error,
+                    domain=",".join(domains) if domains else "all",
                 )
                 logger.warning("SQL generation attempt %d failed (LLM error): %s", attempt + 1, exc)
             except ValueError as exc:
                 gen_ms = int((time.perf_counter() - t_gen) * 1000)
                 last_error = str(exc)
                 await obs.log_span(
-                    "sql_gen", gen_ms, success=False, attempt=attempt + 1, error=last_error
+                    "sql_gen",
+                    gen_ms,
+                    success=False,
+                    attempt=attempt + 1,
+                    error=last_error,
+                    domain=",".join(domains) if domains else "all",
                 )
                 logger.warning("SQL generation attempt %d failed: %s", attempt + 1, exc)
                 # Don't retry for definitively unanswerable errors — a retry would only
@@ -298,7 +308,7 @@ class QueryAgent:
             f"Available columns in {tbl_name}: {available}."
         )
 
-    def _classify_domains(self, question: str) -> list[str] | None:
+    def classify_domains(self, question: str) -> list[str] | None:
         """Return relevant domain names based on question keywords.
 
         Returns None (= all domains) if no keywords match, so the LLM

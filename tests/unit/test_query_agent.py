@@ -55,30 +55,30 @@ def agent(mock_provider, conn, schema_context):
 
 class TestClassifyDomains:
     def test_sector_keyword(self, agent):
-        domains = agent._classify_domains("which sector has highest rotation?")
+        domains = agent.classify_domains("which sector has highest rotation?")
         assert "sector" in domains
         assert "core" in domains
 
     def test_risk_keyword(self, agent):
-        domains = agent._classify_domains("show me drawdown and sharpe ratio")
+        domains = agent.classify_domains("show me drawdown and sharpe ratio")
         assert "risk" in domains
 
     def test_equity_keyword(self, agent):
-        domains = agent._classify_domains("top performing stocks by momentum")
+        domains = agent.classify_domains("top performing stocks by momentum")
         assert "equity" in domains
 
     def test_no_match_returns_none(self, agent):
-        domains = agent._classify_domains("hello world")
+        domains = agent.classify_domains("hello world")
         assert domains is None
 
     def test_multiple_domains(self, agent):
-        domains = agent._classify_domains("compare sector volatility and beta")
+        domains = agent.classify_domains("compare sector volatility and beta")
         assert "sector" in domains
         assert "risk" in domains
         assert "core" in domains
 
     def test_always_prepends_core(self, agent):
-        domains = agent._classify_domains("show me sector performance")
+        domains = agent.classify_domains("show me sector performance")
         assert domains[0] == "core"
 
 

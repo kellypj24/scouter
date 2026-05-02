@@ -46,19 +46,20 @@ CREATE TABLE IF NOT EXISTS requests (
 );
 
 CREATE TABLE IF NOT EXISTS spans (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id   TEXT    NOT NULL,
-    stage        TEXT    NOT NULL,
-    attempt      INTEGER NOT NULL DEFAULT 1,
-    started_at   TEXT    NOT NULL,
-    latency_ms   INTEGER,
-    success      INTEGER NOT NULL DEFAULT 1,
-    error        TEXT,
-    sql_length   INTEGER,
-    row_count    INTEGER,
-    chart_source TEXT,
-    news_items   INTEGER,
-    domain       TEXT
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id         TEXT    NOT NULL,
+    stage              TEXT    NOT NULL,
+    attempt            INTEGER NOT NULL DEFAULT 1,
+    started_at         TEXT    NOT NULL,
+    latency_ms         INTEGER,
+    success            INTEGER NOT NULL DEFAULT 1,
+    error              TEXT,
+    sql_length         INTEGER,
+    row_count          INTEGER,
+    chart_source       TEXT,
+    news_items         INTEGER,
+    domain             TEXT,
+    sub_question_count INTEGER
 );
 """
 
@@ -85,10 +86,18 @@ class ObservabilityLogger:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self._db_path) as conn:
                 conn.executescript(_DDL)
+            self._migrate_schema()
             return True
         except Exception as exc:
             logger.warning("Observability logging disabled — could not initialise db: %s", exc)
             return False
+
+    def _migrate_schema(self) -> None:
+        """Add columns introduced after the initial schema was created."""
+        with self._connect() as conn:
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(spans)")}
+            if "sub_question_count" not in existing:
+                conn.execute("ALTER TABLE spans ADD COLUMN sub_question_count INTEGER")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
@@ -133,8 +142,9 @@ class ObservabilityLogger:
             conn.execute(
                 "INSERT INTO spans"
                 " (request_id, stage, attempt, started_at, latency_ms, success,"
-                "  error, sql_length, row_count, chart_source, news_items, domain)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  error, sql_length, row_count, chart_source, news_items, domain,"
+                "  sub_question_count)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     request_id,
                     stage,
@@ -148,6 +158,7 @@ class ObservabilityLogger:
                     metadata.get("chart_source"),
                     metadata.get("news_items"),
                     metadata.get("domain"),
+                    metadata.get("sub_question_count"),
                 ),
             )
 
@@ -207,7 +218,8 @@ class ObservabilityLogger:
             success: Whether the stage completed without error.
             attempt: Retry attempt number (1-indexed).
             **metadata: Optional fields — error, sql_length, row_count,
-                chart_source (llm|inferred|none), news_items, domain.
+                chart_source (llm|inferred|none), news_items, domain,
+                sub_question_count (decompose stage only).
         """
         if not self._enabled:
             return
