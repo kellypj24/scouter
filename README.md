@@ -94,9 +94,10 @@ Dagster pipelines are driven by sensors rather than cron schedules. Sensors self
 | Sensor | Polls | Fires when |
 |--------|-------|-----------|
 | `data_freshness_sensor` | every 30 min | `historical_data` is ≥ 1 day stale |
+| `dbt_test_after_ingest` | every 10 min | `historical_data` date advances (new ingest) |
 | `obs_log_sensor` | every 5 min | `logs/scouter_logs.db` file is modified |
 
-Both sensors start in `RUNNING` status so they activate as soon as `just pipeline` starts.
+All sensors start in `RUNNING` status so they activate as soon as `just pipeline` starts.
 
 ## Observability
 
@@ -112,24 +113,33 @@ Every request through the FastAPI service is instrumented end-to-end. Telemetry 
 | `narrative` | latency, success/failure, chart source (llm / inferred / none) |
 | `news` | latency, items fetched, success/failure |
 | Dagster runs | job name, status, duration, last success time |
+| dbt tests | test name, model, pass/fail, failing row count, run timestamp |
 
 ### Analytical marts (DuckDB, built by dbt)
 
 ```sql
--- Which domains trigger the most LLM fallbacks?
+-- Which domains trigger the most LLM fallbacks? (targets for prompt hardening)
 SELECT * FROM main_observability.mart_fallback_analysis ORDER BY fallback_rate_pct DESC;
 
 -- Where is latency worst?
 SELECT * FROM main_observability.mart_stage_latency ORDER BY p95_latency_ms DESC;
 
--- Full per-request view
-SELECT * FROM main_observability.mart_request_metrics ORDER BY started_at DESC LIMIT 20;
+-- Full per-request view — filter to eval fixture runs
+SELECT * FROM main_observability.mart_request_metrics
+WHERE request_id LIKE 'eval_%' ORDER BY started_at DESC LIMIT 50;
 
--- Dagster pipeline health alongside answer quality
+-- Dagster pipeline health
 SELECT * FROM main_observability.mart_pipeline_health;
+
+-- dbt data quality — which models have failing tests?
+SELECT * FROM main_observability.mart_dbt_test_health WHERE failing_tests > 0;
 ```
 
-Sync is triggered automatically by `obs_log_sensor` when the log file changes. To sync manually, trigger `observability_sync` from the Dagster UI after starting `just pipeline`.
+Scouter request telemetry is synced by `obs_log_sensor` when the log file changes. dbt test results are written directly to DuckDB by `dbt_test_runner` after each ingest — no sync step needed.
+
+### Eval fixture observability
+
+Every `just eval-go` run tags each fixture's requests in the observability database with `eval_{fixture_id}_...` as the `request_id`. This means you can query `mart_fallback_analysis` or `mart_request_metrics` filtered to eval runs to see exactly which fixtures are driving fallbacks, SQL retries, or slow latency — the direct data feed for answer quality improvement decisions.
 
 ## Development
 

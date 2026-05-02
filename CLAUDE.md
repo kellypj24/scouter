@@ -25,7 +25,7 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 2**: `src/agent/narrative_agent.py` (LLM prose + chart inference), `src/viz/charts.py` (Plotly builders), `src/models/response.py` (NarrativeBlock), 15/15 eval fixtures passing
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
-- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, per-stage span logging); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 4 dbt analytical marts); event-based sensors replacing all cron schedules
+- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, per-stage span logging); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side
 
 ### What's next (Phase 5 remaining)
 - Docker Compose for full stack (FastAPI + gateway + Streamlit + Ollama)
@@ -47,6 +47,7 @@ Three distinct runtimes — keep them separate:
 │  Dagster Pipeline (pipeline/)       │
 │  Sensors (event-based, no crons)   │
 │  data_freshness_sensor → ingest    │
+│  dbt_test_after_ingest → dbt tests │
 │  obs_log_sensor → obs sync         │
 └──────────────┬──────────────────────┘
                │ writes financial data
@@ -72,10 +73,11 @@ Three distinct runtimes — keep them separate:
 │  Streamlit App (app/)               │
 │  httpx SSE client + artifact render │
 └─────────────────────────────────────┘
-       mart_fallback_analysis         ← answer quality targets
+       mart_fallback_analysis         ← answer quality targets (filter: eval_%  vs prod)
        mart_stage_latency             ← bottleneck identification
-       mart_request_metrics           ← per-request audit
+       mart_request_metrics           ← per-request audit (prod + eval fixture runs)
        mart_pipeline_health           ← Dagster run history
+       mart_dbt_test_health           ← data quality: failing tests per model
 ```
 
 ## Constitution (Non-Negotiable Principles)
@@ -142,6 +144,7 @@ pipeline/               # Dagster — data pipeline only, no LLM calls
   assets/
     ingestion.py        # Raw data → DuckDB asset
     observability.py    # Syncs SQLite logs + Dagster run history → DuckDB raw_observability
+    dbt_tests.py        # Runs dbt test, writes results directly to DuckDB (no SQLite)
     transformations.py  # @dbt_assets
   checks/
     freshness.py        # Asset freshness checks
@@ -151,6 +154,7 @@ pipeline/               # Dagster — data pipeline only, no LLM calls
     daily.py            # Empty — all triggers are sensor-based (kept as escape hatch)
   sensors/
     data_freshness.py   # Polls DuckDB every 30 min, fires when data ≥ 1 day stale
+    dbt_tests.py        # Polls DuckDB every 10 min, fires when historical_data date advances
     observability.py    # Watches SQLite mtime every 5 min, fires when log file changes
   __init__.py           # Dagster Definitions entry point
 app/
@@ -213,6 +217,8 @@ The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess pe
 - **Event-based sensors** — no cron schedules; sensors gate on real conditions (file mtime, data age) and self-correct after machine sleep
 - **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises
 - **Observability read path** — Dagster ELT (SQLite → DuckDB) + dbt marts; same pattern scales to Postgres → Snowflake without changing downstream models
+- **dbt test results** — written directly to DuckDB by `dbt_test_runner` (Dagster process owns the write connection; no SQLite hop needed)
+- **Eval tagging** — `eval_runner.py` prefixes `request_id` with `eval_{fixture_id}_` so fixture runs are queryable alongside prod traffic in all observability marts
 - **EnvVar()** for all secrets in Dagster resources
 
 ## Data Architecture (Kimball Dimensional Model)
@@ -228,11 +234,18 @@ raw (DuckDB main schema)        yfinance ingestion via Dagster
                  risk/          mart_risk_profile, mart_drawdown
 
 raw_observability schema        SQLite + Dagster run history via observability_sync asset
-  └── staging (views)           stg_obs_requests, stg_obs_spans, stg_obs_dagster_runs
+  |                             dbt test results via dbt_test_runner (direct DuckDB write)
+  └── staging (views)           stg_obs_requests, stg_obs_spans, stg_obs_dagster_runs,
+  |                             stg_obs_dbt_tests
        └── marts/
-            observability/      mart_request_metrics, mart_stage_latency,
-                                mart_fallback_analysis, mart_pipeline_health
+            observability/      mart_request_metrics    — per-request audit (prod + eval runs)
+                                mart_stage_latency      — P50/P95/P99 by pipeline stage
+                                mart_fallback_analysis  — fallback rate by domain
+                                mart_pipeline_health    — Dagster job success/duration
+                                mart_dbt_test_health    — dbt pass rate + failing rows per model
 ```
+
+**Eval fixture observability**: `eval_runner.py` tags every run with `eval_{fixture_id}_...` as the `request_id`. Filter `WHERE request_id LIKE 'eval_%'` in any mart to isolate eval runs from prod traffic and correlate fixture failures to specific observability signals.
 
 **LLM schema injection strategy**: The orchestrator classifies the user's question into a domain
 (equity / sector / risk) and injects only that domain's mart schema into the prompt. The LLM
