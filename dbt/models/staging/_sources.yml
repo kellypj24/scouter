@@ -26,3 +26,25 @@ sources:
         columns:
           - name: symbol
             tests: [not_null, unique]
+
+  - name: raw_observability
+    description: Observability telemetry synced from SQLite by the Dagster observability_sync asset.
+    schema: raw_observability
+    tables:
+      - name: requests
+        description: One row per agent request — question, domain, latency, fallback flag.
+        columns:
+          - name: request_id
+            tests: [not_null, unique]
+      - name: spans
+        description: One row per pipeline stage per request — latency and success per stage.
+        columns:
+          - name: id
+            tests: [not_null, unique]
+          - name: request_id
+            tests: [not_null]
+      - name: dagster_runs
+        description: Dagster pipeline run history — success rate, duration, job status.
+        columns:
+          - name: run_id
+            tests: [not_null, unique]

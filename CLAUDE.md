@@ -27,9 +27,13 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
 
 ### What's next (Phase 5)
+- **Observability** (in progress on `feature/observability`): structured JSON logging throughout `src/`, request ID propagation FastAPI → orchestrator → agents, DuckDB-queryable log analysis
 - Docker Compose for full stack (FastAPI + gateway + Streamlit + Ollama)
-- Structured logging / observability (request IDs already flow through gateway)
-- Answer quality: prompt hardening for multi-stock time-series queries, broader eval fixture coverage
+- Answer quality round 2 (after observability gives data-driven targets):
+  - Multi-stock time-series: `mart_equity_performance` CTE pattern is fragile for 3+ stocks over 6+ months
+  - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 20 fixtures)
+  - Chart quality scoring: Go scorer validates chart presence but not `x_col`/`y_col` sensibility
+  - News integration: upgrade to tool-calling when using Anthropic provider (qwen2.5 tool support is unreliable)
 
 **Active work**: `assignments/active/`
 **Completed reference**: `assignments/completed/`

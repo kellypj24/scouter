@@ -31,3 +31,6 @@ models:
       risk:
         +materialized: table
         +schema: risk
+      observability:
+        +materialized: table
+        +schema: observability

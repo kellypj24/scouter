@@ -11,6 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
@@ -21,6 +22,7 @@ from src.agent.prompts.narrative import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
 from src.data.news import NewsItem
 from src.models.response import ChartSpec, NarrativeBlock, QueryResult
+from src.observability.logger import get_obs_logger
 
 _NewsFetcher = Callable[[list[str]], Awaitable[list[NewsItem]]]
 
@@ -105,10 +107,22 @@ class NarrativeAgent:
 
         news_context = await self._build_news_context(data)
 
+        obs = get_obs_logger()
+        t_narr = time.perf_counter()
         try:
             response = await self._generate_narrative(question, query_result, data, news_context)
-            return self._assemble_block(question, query_result, data, response)
+            block = self._assemble_block(question, query_result, data, response)
+            narr_ms = int((time.perf_counter() - t_narr) * 1000)
+            chart_source = (
+                "llm" if block.chart_spec and response.chartable
+                else "inferred" if block.chart_spec
+                else "none"
+            )
+            await obs.log_span("narrative", narr_ms, success=True, chart_source=chart_source)
+            return block
         except (LLMError, Exception) as exc:
+            narr_ms = int((time.perf_counter() - t_narr) * 1000)
+            await obs.log_span("narrative", narr_ms, success=False, error=str(exc))
             logger.warning("Narrative generation failed — using fallback: %s", exc)
             return _fallback_block(question, query_result, data)
 
@@ -129,10 +143,16 @@ class NarrativeAgent:
         tickers = _tickers_for_news(data)
         if not tickers:
             return ""
+        obs = get_obs_logger()
+        t_news = time.perf_counter()
         try:
             items = await self._news_fetcher(tickers)
+            news_ms = int((time.perf_counter() - t_news) * 1000)
+            await obs.log_span("news", news_ms, success=True, news_items=len(items))
             return _format_news_context(items)
         except Exception as exc:
+            news_ms = int((time.perf_counter() - t_news) * 1000)
+            await obs.log_span("news", news_ms, success=False, error=str(exc))
             logger.debug("News context skipped: %s", exc)
             return ""
 
