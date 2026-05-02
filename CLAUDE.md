@@ -14,11 +14,22 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Data Layer + Query Agent | Planned |
-| 2 | Narrative Agent + Visualization | Planned |
-| 3 | Orchestrator (multi-query) | Planned |
-| 4 | UI Polish | Planned |
-| 5 | Production Harness | Planned |
+| 1 | Data Layer + Query Agent | Complete |
+| 2 | Narrative Agent + Visualization | Complete |
+| 3 | Orchestrator (multi-query) | Complete |
+| 4 | UI Polish | Complete |
+| 5 | Production Harness | In Progress |
+
+### What's done
+- **Phase 1**: `src/data/` (DuckDB connection, schema introspection, loader), `src/agent/query_agent.py` (LLM SQL gen, 2-attempt retry, domain classification, validation), full dbt mart structure (`core/`, `equity/`, `sector/`, `risk/`), Dagster ingestion + dbt assets
+- **Phase 2**: `src/agent/narrative_agent.py` (LLM prose + chart inference), `src/viz/charts.py` (Plotly builders), `src/models/response.py` (NarrativeBlock), 15/15 eval fixtures passing
+- **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
+- **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
+
+### What's next (Phase 5)
+- Docker Compose for full stack (FastAPI + gateway + Streamlit + Ollama)
+- Structured logging / observability (request IDs already flow through gateway)
+- Answer quality: prompt hardening for multi-stock time-series queries, broader eval fixture coverage
 
 **Active work**: `assignments/active/`
 **Completed reference**: `assignments/completed/`
@@ -41,13 +52,19 @@ Two distinct runtimes — keep them separate:
 ┌─────────────────────────────────────┐
 │  Agent Harness (src/)               │
 │  User question → SQL → narrative   │
-│  Runs on request (Streamlit)        │
+│  Exposed via FastAPI SSE (api/)     │
 └──────────────┬──────────────────────┘
-               │
+               │ HTTP SSE
+               ▼
+┌─────────────────────────────────────┐
+│  Go Gateway (gateway/)              │
+│  Proxy + request ID + timing        │
+└──────────────┬──────────────────────┘
+               │ HTTP SSE
                ▼
 ┌─────────────────────────────────────┐
 │  Streamlit App (app/)               │
-│  Chat UI + artifact renderer        │
+│  httpx SSE client + artifact render │
 └─────────────────────────────────────┘
 ```
 
