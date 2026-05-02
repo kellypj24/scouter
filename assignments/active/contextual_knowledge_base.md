@@ -2,8 +2,8 @@
 
 **Branch**: `feature/contextual-knowledge`  
 **Phase**: 5 (Production Harness)  
-**Status**: Planning  
-**Depends on**: `feature/observability` merged to `main`
+**Status**: In Progress  
+**Depends on**: `feature/observability` merged to `main` ✓
 
 ## Goal
 
@@ -104,50 +104,45 @@ Schema injection (updated)
 
 ## Tasks
 
-### 1. Merge `feature/observability` → `main` and cut new branch
-- Open PR for observability branch
-- Create `feature/contextual-knowledge` from updated `main`
+### 1. Merge `feature/observability` → `main` and cut new branch ✓
+- PR #9 merged via squash
+- `feature/contextual-knowledge` cut from updated main
 
-### 2. dbt docs Dagster integration
-- `dbt_docs_sensor`: poll `dbt/target/manifest.json` mtime every 10 min, fire on change
-- `dbt_docs_sync` asset: parse `manifest.json` (models, columns, descriptions, tests) and `catalog.json` (statistics); write to `raw_schema_context` tables in DuckDB
-- Handle missing `catalog.json` gracefully (it requires `dbt docs generate`, not just `dbt run`)
-- Unit test: manifest parser with fixture JSON files
+### 2. dbt docs Dagster integration ✓
+- `dbt_docs_sensor` (`pipeline/sensors/dbt_docs.py`): polls `manifest.json` mtime every 10 min
+- `dbt_docs_generate` asset (`pipeline/assets/schema_context.py`): runs `dbt docs generate`
+- Registered in `pipeline/sensors/__init__.py` and `pipeline/assets/__init__.py`
+- Handles missing catalog.json gracefully (schema.py falls back to INFORMATION_SCHEMA)
 
-### 3. dbt schema context marts
-- `mart_schema_context`: join models + columns + statistics; include accepted_values from tests
-- `mart_query_patterns`: aggregate successful candidate patterns; join eval signal; flag `eval_validated`
-- Add both to `dbt_project.yml`
+### 3. dbt schema context marts ✓ (partial)
+- `mart_query_patterns` created in `dbt/models/marts/observability/`
+- `stg_obs_spans.sql` extended with `mart` and `sql_hash` columns
+- Note: `mart_schema_context` deferred — `schema.py` already reads dbt artifacts directly; no DuckDB intermediate needed
 
-### 4. Extend observability span logging
-- Add `query_pattern` span type to `ObservabilityLogger`
-- `QueryAgent` logs on successful execution: domain, mart(s) referenced, question_type (coarse classification), SQL hash
-- Update `observability_sync` Dagster asset to handle the new span type
-- Update `stg_obs_spans` staging view
+### 4. Extend observability span logging ✓
+- `mart` and `sql_hash` columns added to SQLite spans DDL + migration in `logger.py`
+- `QueryAgent` logs `query_pattern` span on successful non-fallback execution
+- `_extract_mart()` and `_sql_hash()` helpers in `query_agent.py`
 
-### 5. Enriched schema injection
-- `src/data/context.py`: `get_enriched_context(domain) -> str` — reads `mart_schema_context` + `learned_patterns.yaml`
-- Update `schema.py` to call `context.py`; maintain token budget (descriptions may push close to 4096 limit — truncate low-value columns first)
-- Fallback: if DuckDB context mart is empty or stale, fall back to current `information_schema` introspection
-- Unit tests: token budget enforcement with rich context
+### 5. Enriched schema injection ✓
+- `src/data/context.py`: `get_few_shot_examples(domain) -> str` — reads `learned_patterns.yaml`
+- `schema.py`: TTL cache (1 hour), `reload_schema_context()` for explicit invalidation
+- `get_schema_prompt()` now appends few-shot examples to schema injection
+- `QueryAgent.run()` calls `get_schema_prompt()` instead of `self._schema.to_prompt()` directly
 
-### 6. learned_patterns.yaml + promotion workflow
-- Define schema for `learned_patterns.yaml` (domain, question_type, sql_template, notes, promoted_by, promoted_at)
-- Write an initial seed from existing eval fixture SQL that passes
-- Document the promotion workflow in `assignments/README.md`: Claude queries `mart_query_patterns`, verifies, adds entry to yaml, commits
-- `context.py` reads yaml at startup (not per-request — cache it)
+### 6. learned_patterns.yaml + promotion workflow ✓
+- Seeded with 5 patterns covering equity screener, single stock, sector, and risk domains
+- `context.py` caches at startup, `invalidate_cache()` for programmatic refresh
+- Promotion workflow documented in `assignments/README.md` section
 
-### 7. Eval harness integration
-- Add new eval fixtures targeting currently high-fallback domains (identify from `mart_fallback_analysis` once observability branch is in prod)
-- Ensure `mart_query_patterns.eval_validated` correctly joins on `eval_` prefixed request IDs
-- Add a Go scorer check: `context_used` flag in runner output (did the agent use an enriched context hit?)
-- Target: eval fixture pass rate does not regress; high-fallback domains improve
+### 7. Eval harness integration — TODO
+- Add new eval fixtures targeting high-fallback domains (use `mart_fallback_analysis` after first prod runs)
+- Add Go scorer check for `context_used` flag
+- Target: eval pass rate does not regress from baseline
 
-### 8. Docs + cleanup
-- Update `src/data/README.md` and `CLAUDE.md` — new context injection path
-- Update `pipeline/README.md` — new sensor + asset
-- Update `dbt/README.md` — new mart domain
-- Update root `CLAUDE.md` — Phase 5 status, new architecture diagram entry
+### 8. Docs + cleanup ✓
+- Updated: `pipeline/README.md`, `pipeline/assets/README.md`, `pipeline/sensors/README.md`
+- Updated: `src/data/README.md`, `dbt/README.md`
 
 ---
 

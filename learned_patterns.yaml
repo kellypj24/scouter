@@ -1,0 +1,81 @@
+# Claude-curated query patterns for LLM schema injection.
+#
+# These are few-shot SQL examples injected into the SQL generation prompt
+# alongside the schema definition. They reduce hallucination by showing the
+# LLM which mart/column combinations produce correct results.
+#
+# Promotion workflow:
+#   1. Review mart_query_patterns WHERE eval_validated = true in DuckDB
+#   2. Verify the SQL is generalizable (not a one-off)
+#   3. Add an entry here with promoted_by: claude and today's date
+#   4. Commit — dbt_docs_sensor picks up the change automatically
+#
+# The local agent reads this file but never writes to it.
+
+version: 1
+
+patterns:
+  - id: equity_screener_top_ytd
+    domain: equity
+    question_type: screener
+    mart: mart_equity_screener
+    example_sql: |
+      SELECT ticker, company_name, sector, ytd_return, volatility_20d, sharpe_20d
+      FROM main_equity.mart_equity_screener
+      ORDER BY ytd_return DESC
+      LIMIT 10
+    notes: Top N stocks by year-to-date return — default screener pattern
+    promoted_by: claude
+    promoted_at: "2026-05-02"
+
+  - id: equity_screener_by_sector
+    domain: equity
+    question_type: screener
+    mart: mart_equity_screener
+    example_sql: |
+      SELECT ticker, company_name, ytd_return, volatility_20d, sharpe_20d
+      FROM main_equity.mart_equity_screener
+      WHERE sector = 'Technology'
+      ORDER BY ytd_return DESC
+      LIMIT 10
+    notes: Screen within a specific sector — use accepted sector values from schema
+    promoted_by: claude
+    promoted_at: "2026-05-02"
+
+  - id: equity_performance_single_stock
+    domain: equity
+    question_type: time_series
+    mart: mart_equity_performance
+    example_sql: |
+      SELECT date, ticker, close, daily_return, cumulative_return
+      FROM main_equity.mart_equity_performance
+      WHERE ticker = 'AAPL'
+      ORDER BY date ASC
+    notes: Single stock price and return history — always filter by ticker first
+    promoted_by: claude
+    promoted_at: "2026-05-02"
+
+  - id: sector_ytd_comparison
+    domain: sector
+    question_type: comparison
+    mart: mart_sector_rotation
+    example_sql: |
+      SELECT sector, avg_ytd_return, avg_volatility, stock_count
+      FROM main_sector.mart_sector_rotation
+      ORDER BY avg_ytd_return DESC
+    notes: Cross-sector YTD return comparison — no WHERE clause needed, one row per sector
+    promoted_by: claude
+    promoted_at: "2026-05-02"
+
+  - id: risk_high_volatility_screen
+    domain: risk
+    question_type: screener
+    mart: mart_risk_profile
+    example_sql: |
+      SELECT ticker, company_name, volatility_20d, sharpe_20d, drawdown_from_52w_high
+      FROM main_risk.mart_risk_profile
+      ORDER BY volatility_20d DESC
+      LIMIT 10
+    notes: High-risk stocks by 20-day volatility — risk mart is the right table, not screener
+    promoted_by: claude
+    promoted_at: "2026-05-02"

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time as _time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -187,23 +188,44 @@ def _enrich_enum_values(ctx: SchemaContext, conn: duckdb.DuckDBPyConnection) -> 
                 )
 
 
-# Module-level cache — artifacts are loaded once per process.
+# Module-level cache with TTL — refreshes after an hour so long-running
+# processes pick up dbt docs generate output without a restart.
 _context: SchemaContext | None = None
+_context_loaded_at: float = 0.0
+_CACHE_TTL_SECONDS: float = 3600.0
 
 
 def load_schema_context(conn: duckdb.DuckDBPyConnection | None = None) -> SchemaContext:
-    """Return the cached SchemaContext, loading it if needed.
+    """Return the cached SchemaContext, reloading after TTL expiry.
 
-    Prefers dbt artifacts. Pass a DuckDB connection to enable the fallback.
+    Prefers dbt artifacts. Pass a DuckDB connection to enable the fallback
+    and enum value enrichment.
     """
-    global _context
-    if _context is None:
-        _context = _load_from_artifacts() or (
-            _load_from_duckdb(conn) if conn is not None else SchemaContext(models=[])
-        )
-        if conn is not None and _context.models:
-            _enrich_enum_values(_context, conn)
+    global _context, _context_loaded_at
+    now = _time.monotonic()
+    if _context is not None and (now - _context_loaded_at) < _CACHE_TTL_SECONDS:
+        return _context
+    _context = _load_from_artifacts() or (
+        _load_from_duckdb(conn) if conn is not None else SchemaContext(models=[])
+    )
+    if conn is not None and _context.models:
+        _enrich_enum_values(_context, conn)
+    _context_loaded_at = now
     return _context
+
+
+def reload_schema_context(conn: duckdb.DuckDBPyConnection | None = None) -> SchemaContext:
+    """Force a cache reload regardless of TTL (e.g. after dbt docs generate).
+
+    Args:
+        conn: DuckDB connection for fallback and enum enrichment.
+
+    Returns:
+        Fresh SchemaContext.
+    """
+    global _context_loaded_at
+    _context_loaded_at = 0.0
+    return load_schema_context(conn)
 
 
 def build_column_lookup(ctx: SchemaContext) -> dict[tuple[str, str], set[str]]:
@@ -230,7 +252,10 @@ def get_schema_prompt(
     conn: duckdb.DuckDBPyConnection,
     domains: list[str] | None = None,
 ) -> str:
-    """Return a schema prompt string for LLM injection.
+    """Return a schema prompt string for LLM injection, including few-shot examples.
+
+    Combines the structural schema (column names, types, descriptions, accepted
+    values) with Claude-curated example queries from learned_patterns.yaml.
 
     Args:
         conn: DuckDB connection (used only if dbt artifacts are missing).
@@ -238,7 +263,14 @@ def get_schema_prompt(
                  None returns all mart/core domains.
 
     Returns:
-        Multi-line schema description ready for prompt injection.
+        Multi-line schema + example query string ready for prompt injection.
     """
+    from src.data.context import get_few_shot_examples
+
     ctx = load_schema_context(conn)
-    return ctx.to_prompt(domains=domains)
+    schema_str = ctx.to_prompt(domains=domains)
+    dominant = domains[0] if domains and len(domains) == 1 else None
+    few_shot = get_few_shot_examples(dominant)
+    if few_shot:
+        return f"{schema_str}\n\n{few_shot}"
+    return schema_str

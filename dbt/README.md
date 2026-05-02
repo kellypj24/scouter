@@ -32,6 +32,7 @@ Built on `raw_observability` schema (populated by Dagster's `observability_sync`
 | `mart_fallback_analysis` | Fallback rate by domain — use to find answer quality targets |
 | `mart_pipeline_health` | Dagster job success/duration history |
 | `mart_dbt_test_health` | dbt test pass rate + failing rows per model |
+| `mart_query_patterns` | Candidate patterns from the local agent — Claude reviews and promotes to `learned_patterns.yaml` |
 
 ## Running dbt
 

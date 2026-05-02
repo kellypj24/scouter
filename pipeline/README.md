@@ -22,6 +22,7 @@ raw_market_data          ← data_freshness_sensor triggers on stale DuckDB data
 | `data_freshness_sensor` | DuckDB MAX(date) every 30 min | historical_data ≥ 1 day stale |
 | `dbt_test_after_ingest` | DuckDB date column every 10 min | date advances after ingest |
 | `obs_log_sensor` | SQLite mtime every 5 min | scouter_logs.db changes |
+| `dbt_docs_sensor` | `dbt/target/manifest.json` mtime every 10 min | dbt build runs and manifest updates |
 
 Sensor-based triggers self-correct after machine sleep — a fixed cron would either fire redundantly or miss windows. `schedules/daily.py` exists as an escape hatch but is intentionally empty.
 
