@@ -88,10 +88,10 @@ Columns returned: {columns}
 
 Sample data ({row_count} total rows):
 {sample}
-
+{news_context}
 The follow-up questions you suggest must be answerable using the columns above \
 or other columns in the same tables. Do not suggest questions that require data \
-outside this dataset.
+outside this dataset.{news_followup_hint}
 
 Respond with JSON only.
 """
