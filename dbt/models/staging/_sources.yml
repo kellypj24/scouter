@@ -48,3 +48,8 @@ sources:
         columns:
           - name: run_id
             tests: [not_null, unique]
+      - name: dbt_test_results
+        description: dbt test pass/fail results written directly by dbt_test_runner asset.
+        columns:
+          - name: test_unique_id
+            tests: [not_null]

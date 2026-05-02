@@ -42,11 +42,13 @@ type FixtureResult struct {
 	Run     *RunResult
 }
 
-// runFixture calls `uv run python scripts/eval_runner.py --json "<question>"`
+// runFixture calls `uv run python scripts/eval_runner.py --json --fixture-id <id> "<question>"`
 // from the project root and parses the JSON output into a RunResult.
-func runFixture(ctx context.Context, projectRoot string, question string) (*RunResult, error) {
+// The fixture ID is passed so eval runs are tagged in the observability database,
+// enabling correlation between fixture failures and prod request telemetry.
+func runFixture(ctx context.Context, projectRoot string, fixtureID string, question string) (*RunResult, error) {
 	cmd := exec.CommandContext(ctx,
-		"uv", "run", "python", "scripts/eval_runner.py", "--json", question,
+		"uv", "run", "python", "scripts/eval_runner.py", "--json", "--fixture-id", fixtureID, question,
 	)
 	cmd.Dir = projectRoot
 

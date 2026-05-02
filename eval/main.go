@@ -101,7 +101,7 @@ func main() {
 
 			fmt.Printf("  → %s\n", dim(fixture.ID))
 			t0 := time.Now()
-			run, runErr := runFixture(ctx, projectRoot, fixture.Question)
+			run, runErr := runFixture(ctx, projectRoot, fixture.ID, fixture.Question)
 			elapsed := time.Since(t0)
 
 			var fr FixtureResult
