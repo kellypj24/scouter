@@ -10,10 +10,10 @@ schedule, consistent with the project's event-based sensor pattern.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from dagster import asset
-from dagster_dbt import DbtCliResource
 
 _DBT_PROJECT_DIR = Path(__file__).resolve().parents[2] / "dbt"
 
@@ -21,7 +21,6 @@ _DBT_PROJECT_DIR = Path(__file__).resolve().parents[2] / "dbt"
 @asset(
     group_name="schema_context",
     compute_kind="dbt",
-    required_resource_keys={"dbt"},
     description=(
         "Run `dbt docs generate` to produce catalog.json. "
         "Keeps the schema context injector's column statistics current after each dbt build."
@@ -30,23 +29,29 @@ _DBT_PROJECT_DIR = Path(__file__).resolve().parents[2] / "dbt"
 def dbt_docs_generate(context) -> None:  # type: ignore[no-untyped-def]
     """Generate dbt documentation artifacts (manifest.json + catalog.json).
 
+    Uses subprocess rather than DbtCliResource.cli() because dagster-dbt's event
+    processing pipeline doesn't support `docs generate` in a plain @asset — it
+    raises an error when trying to map dbt events to Dagster asset materializations.
+
     Writes to dbt/target/catalog.json, which schema.py reads for column-level
-    type information and statistics used in LLM schema injection. Failures are
-    logged as warnings — the schema injector falls back to INFORMATION_SCHEMA
-    if catalog.json is absent.
+    type information and statistics. Failures are logged as warnings — the schema
+    injector falls back to INFORMATION_SCHEMA if catalog.json is absent.
 
     Args:
         context: Dagster asset execution context.
     """
-    dbt: DbtCliResource = context.resources.dbt
+    result = subprocess.run(
+        ["uv", "run", "dbt", "docs", "generate", "--project-dir", str(_DBT_PROJECT_DIR)],
+        capture_output=True,
+        text=True,
+    )
 
-    try:
-        # Do not pass context= here — that's only valid for @dbt_assets decorated assets.
-        # Without it, dbt runs the command without trying to propagate dbt metadata.
-        dbt.cli(["docs", "generate"]).wait()
+    if result.returncode != 0:
+        context.log.warning(
+            "dbt docs generate exited %d:\n%s", result.returncode, result.stderr or result.stdout
+        )
+    else:
         context.log.info("dbt docs generate completed successfully")
-    except Exception as exc:
-        context.log.warning("dbt docs generate finished with errors: %s", exc)
 
     catalog_path = _DBT_PROJECT_DIR / "target" / "catalog.json"
     manifest_path = _DBT_PROJECT_DIR / "target" / "manifest.json"

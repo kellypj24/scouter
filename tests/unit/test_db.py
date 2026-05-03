@@ -115,16 +115,19 @@ class TestSensorConnectionSafety:
 class TestDbtDocsGenerateAsset:
     """dbt_docs_generate must not pass context= to dbt.cli()."""
 
-    def test_does_not_pass_context_to_dbt_cli(self):
-        """Passing context= to dbt.cli() in a plain @asset raises a dbt-dagster warning.
+    def test_uses_subprocess_not_dbt_cli(self):
+        """dbt_docs_generate must use subprocess, not DbtCliResource.cli().
 
-        Only @dbt_assets decorated functions should pass context=. In a plain @asset,
-        the dbt-dagster library can't find manifest metadata on the asset and logs an
-        error, and the dbt command may not run correctly.
+        DbtCliResource.cli() with context= raises a 'manifest metadata' error in plain
+        @asset functions (only valid for @dbt_assets). Without context= it raises a
+        different error when processing dbt events. Using subprocess avoids all of this.
         """
         path = "pipeline/assets/schema_context.py"
         source = open(path).read()
-        assert 'context=context' not in source, (
-            f"{path}: dbt_docs_generate must not pass context=context to dbt.cli() — "
-            "only valid for @dbt_assets, causes a warning/error in plain @asset functions"
+        assert "subprocess" in source, (
+            f"{path}: dbt_docs_generate must use subprocess to run dbt docs generate"
+        )
+        assert "dbt.cli" not in source, (
+            f"{path}: dbt_docs_generate must not use DbtCliResource.cli() — "
+            "causes dbt-dagster event processing errors in plain @asset functions"
         )
