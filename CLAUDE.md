@@ -47,6 +47,7 @@ Three distinct runtimes — keep them separate:
 │  Dagster Pipeline (pipeline/)       │
 │  Sensors (event-based, no crons)   │
 │  data_freshness_sensor → ingest    │
+│  dbt_build_after_ingest → dbt run  │
 │  dbt_test_after_ingest → dbt tests │
 │  obs_log_sensor → obs sync         │
 └──────────────┬──────────────────────┘
@@ -156,7 +157,8 @@ pipeline/               # Dagster — data pipeline only, no LLM calls
     daily.py            # Empty — all triggers are sensor-based (kept as escape hatch)
   sensors/
     data_freshness.py   # Polls DuckDB every 30 min, fires when data ≥ 1 day stale
-    dbt_tests.py        # Polls DuckDB every 10 min, fires when historical_data date advances
+    dbt_build.py        # Polls DuckDB every 10 min, fires dbt run when historical_data date advances
+    dbt_tests.py        # Polls DuckDB every 10 min, fires dbt test when historical_data date advances
     dbt_docs.py         # Watches manifest.json mtime every 10 min, fires on dbt build
     observability.py    # Watches SQLite mtime every 5 min, fires when log file changes
   __init__.py           # Dagster Definitions entry point
