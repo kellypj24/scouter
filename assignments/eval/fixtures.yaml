@@ -197,10 +197,12 @@ fixtures:
   # ── Sector snapshot — Guard 1 regression (no time dimension) ─────────────
   # mart_sector_fundamentals is a current snapshot; the LLM occasionally adds
   # date/year filters on first attempt. Guard 1 catches this and forces a clean
-  # snapshot query on retry. sql_table asserted to confirm the right mart is used.
+  # snapshot query on retry.  ticker_count and avg_market_cap are unique to this
+  # table so the model routes there reliably (unlike Sharpe/volatility which map to
+  # mart_risk_profile too).  sector_ytd_performance also exercises Guard 1 directly.
 
   - id: sector_fundamentals_snapshot
-    question: "Compare each sector's average Sharpe ratio and volatility right now"
+    question: "Rank each market sector by total market capitalization"
     expect:
       min_rows: 5
       max_blocks: 1
