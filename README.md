@@ -81,6 +81,8 @@ src/ (Python agent harness)      orchestrator → query agent → narrative agen
 ## Data pipeline
 
 ```bash
+# Requires DAGSTER_HOME set to an absolute path (see .env.example).
+# dagster_home/ is created automatically on first run.
 just pipeline      # Start Dagster dev server (sensors activate automatically)
 just ingest        # Manually trigger raw data ingest
 just dbt           # Run dbt transformations
@@ -93,10 +95,11 @@ Dagster pipelines are driven by sensors rather than cron schedules. Sensors self
 
 | Sensor | Polls | Fires when |
 |--------|-------|-----------|
-| `data_freshness_sensor` | every 30 min | `historical_data` is ≥ 1 day stale |
-| `dbt_test_after_ingest` | every 10 min | `historical_data` date advances (new ingest) |
-| `dbt_docs_sensor` | every 10 min | `dbt/target/manifest.json` mtime advances (dbt build ran) |
-| `obs_log_sensor` | every 5 min | `logs/scouter_logs.db` file is modified |
+| `data_freshness_sensor` | every 30 min | `historical_data` is ≥ 1 day stale → triggers ingest |
+| `dbt_build_after_ingest` | every 10 min | `historical_data` date advances → triggers `dbt run` (mart refresh) |
+| `dbt_test_after_ingest` | every 10 min | `historical_data` date advances → triggers `dbt test` (quality check) |
+| `dbt_docs_sensor` | every 10 min | `dbt/target/manifest.json` mtime advances → regenerates docs |
+| `obs_log_sensor` | every 5 min | `logs/scouter_logs.db` modified → syncs telemetry to DuckDB |
 
 All sensors start in `RUNNING` status so they activate as soon as `just pipeline` starts.
 

@@ -13,7 +13,8 @@ models:
       - name: market_cap_tier
         tests:
           - accepted_values:
-              values: [mega_cap, large_cap, mid_cap, small_cap, unknown]
+              arguments:
+                values: [mega_cap, large_cap, mid_cap, small_cap, unknown]
 
   - name: dim_date
     description: >
@@ -25,7 +26,8 @@ models:
       - name: day_of_week_name
         tests:
           - accepted_values:
-              values: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+              arguments:
+                values: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
 
   - name: fct_daily_prices
     description: >
