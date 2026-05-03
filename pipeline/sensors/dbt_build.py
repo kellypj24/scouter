@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from pathlib import Path
 
 from dagster import DefaultSensorStatus, RunRequest, SensorEvaluationContext, sensor
 
@@ -20,7 +19,44 @@ from pipeline.assets.transformations import _dbt_assets_list
 
 logger = logging.getLogger(__name__)
 
-_DBT_MANIFEST = Path(__file__).resolve().parents[2] / "dbt" / "target" / "manifest.json"
+
+def check_and_yield(context: SensorEvaluationContext) -> Iterator[RunRequest]:
+    """Core sensor logic — check historical_data freshness and yield a RunRequest if stale.
+
+    Extracted so it can be unit-tested regardless of whether the dbt manifest
+    exists in the test environment (the manifest controls which sensor variant
+    is registered, but the logic is the same either way).
+
+    Args:
+        context: Dagster sensor evaluation context.
+    """
+    from src.data.db import fresh_read_connection
+
+    try:
+        with fresh_read_connection() as conn:
+            row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
+    except Exception as exc:
+        context.log.warning("Could not read historical_data for dbt build trigger: %s", exc)
+        return
+
+    if not row or not row[0]:
+        return
+
+    latest_date = str(row[0])
+    if latest_date == context.cursor:
+        context.log.debug(
+            "historical_data unchanged (latest: %s) — dbt marts already current", latest_date
+        )
+        return
+
+    context.update_cursor(latest_date)
+    context.log.info(
+        "New market data detected (latest: %s, was: %s) — triggering dbt build",
+        latest_date,
+        context.cursor or "never",
+    )
+    yield RunRequest(run_key=f"dbt_build_{latest_date}")
+
 
 if _dbt_assets_list:
 
@@ -36,43 +72,14 @@ if _dbt_assets_list:
     def dbt_build_after_ingest(context: SensorEvaluationContext) -> Iterator[RunRequest]:
         """Rebuild dbt marts when new market data is detected.
 
-        Compares MAX(date) in historical_data against the stored cursor. If the
-        date has advanced (new ingest completed), yields a RunRequest so all dbt
-        models are rebuilt against the freshly ingested raw data.
-
         Args:
             context: Dagster sensor evaluation context.
         """
-        from src.data.db import fresh_read_connection
-
-        try:
-            with fresh_read_connection() as conn:
-                row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
-        except Exception as exc:
-            context.log.warning("Could not read historical_data for dbt build trigger: %s", exc)
-            return
-
-        if not row or not row[0]:
-            return
-
-        latest_date = str(row[0])
-        if latest_date == context.cursor:
-            context.log.debug(
-                "historical_data unchanged (latest: %s) — dbt marts already current", latest_date
-            )
-            return
-
-        context.update_cursor(latest_date)
-        context.log.info(
-            "New market data detected (latest: %s, was: %s) — triggering dbt build",
-            latest_date,
-            context.cursor or "never",
-        )
-        yield RunRequest(run_key=f"dbt_build_{latest_date}")
+        yield from check_and_yield(context)
 
 else:
     # Manifest not yet compiled (e.g. fresh clone before first dbt build).
-    # Register a no-op so imports don't fail.
+    # Register a no-op so imports don't fail; activate by running `just dbt-docs`.
     @sensor(
         minimum_interval_seconds=600,
         default_status=DefaultSensorStatus.RUNNING,
