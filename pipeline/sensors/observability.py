@@ -15,6 +15,7 @@ The sensor body becomes a queue consumer; the rest of the pipeline is unchanged.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from dagster import DefaultSensorStatus, RunRequest, SensorEvaluationContext, sensor
@@ -33,7 +34,7 @@ _LOGS_DB = Path(os.getenv("SCOUTER_LOGS_DB", "logs/scouter_logs.db"))
         "is modified. Replaces the hourly cron schedule."
     ),
 )
-def obs_log_sensor(context: SensorEvaluationContext) -> None:
+def obs_log_sensor(context: SensorEvaluationContext) -> Iterator[RunRequest]:
     """Sync observability logs into DuckDB when new requests have been logged.
 
     Compares the SQLite file's mtime against the stored cursor. If the file

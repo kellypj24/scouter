@@ -53,11 +53,19 @@ def _read_dagster_runs(instance: DagsterInstance) -> pd.DataFrame:
     rows = []
     for run in runs:
         start_ts = (
-            datetime.fromtimestamp(run.start_time, tz=UTC).isoformat() if run.start_time else None
+            datetime.fromtimestamp(run.start_time, tz=UTC).isoformat()  # type: ignore[attr-defined]
+            if run.start_time  # type: ignore[attr-defined]
+            else None
         )
-        end_ts = datetime.fromtimestamp(run.end_time, tz=UTC).isoformat() if run.end_time else None
+        end_ts = (
+            datetime.fromtimestamp(run.end_time, tz=UTC).isoformat()  # type: ignore[attr-defined]
+            if run.end_time  # type: ignore[attr-defined]
+            else None
+        )
         duration_ms = (
-            int((run.end_time - run.start_time) * 1000) if run.start_time and run.end_time else None
+            int((run.end_time - run.start_time) * 1000)  # type: ignore[attr-defined]
+            if run.start_time and run.end_time  # type: ignore[attr-defined]
+            else None
         )
         rows.append(
             {
@@ -73,10 +81,10 @@ def _read_dagster_runs(instance: DagsterInstance) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _materialize(conn: object, df: pd.DataFrame, table: str) -> None:  # type: ignore[type-arg]
+def _materialize(conn: object, df: pd.DataFrame, table: str) -> None:
     """Full-refresh load of a DataFrame into DuckDB."""
-    conn.execute(f"DROP TABLE IF EXISTS {_SCHEMA}.{table}")  # type: ignore[union-attr]
-    conn.execute(f"CREATE TABLE {_SCHEMA}.{table} AS SELECT * FROM df")  # type: ignore[union-attr]
+    conn.execute(f"DROP TABLE IF EXISTS {_SCHEMA}.{table}")  # type: ignore[attr-defined]
+    conn.execute(f"CREATE TABLE {_SCHEMA}.{table} AS SELECT * FROM df")  # type: ignore[attr-defined]
 
 
 @asset(
