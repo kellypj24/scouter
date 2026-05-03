@@ -35,6 +35,7 @@ dbt/logs/
 
 # Dagster
 $dagster_home/
+${DAGSTER_HOME}/
 dagster_home/
 .dagster/
 
