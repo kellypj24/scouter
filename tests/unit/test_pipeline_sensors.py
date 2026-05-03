@@ -27,7 +27,9 @@ class TestDbtBuildAfterIngest:
         from pipeline.sensors.dbt_build import check_and_yield
 
         ctx = self._make_context(cursor="2026-05-01")
-        with patch("src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-01",))):
+        with patch(
+            "src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-01",))
+        ):
             results = list(check_and_yield(ctx))
 
         assert results == []
@@ -39,7 +41,9 @@ class TestDbtBuildAfterIngest:
         from pipeline.sensors.dbt_build import check_and_yield
 
         ctx = self._make_context(cursor="2026-05-01")
-        with patch("src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-02",))):
+        with patch(
+            "src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-02",))
+        ):
             results = list(check_and_yield(ctx))
 
         assert len(results) == 1
@@ -53,7 +57,9 @@ class TestDbtBuildAfterIngest:
         from pipeline.sensors.dbt_build import check_and_yield
 
         ctx = self._make_context(cursor=None)
-        with patch("src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-01",))):
+        with patch(
+            "src.data.db.fresh_read_connection", return_value=self._mock_conn(("2026-05-01",))
+        ):
             results = list(check_and_yield(ctx))
 
         assert len(results) == 1
