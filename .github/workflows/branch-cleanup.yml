@@ -1,0 +1,123 @@
+name: Branch Cleanup
+
+on:
+  # Immediate: fires when a PR targeting main is closed
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+  # Weekly sweep: catches anything that slipped through
+  schedule:
+    - cron: "0 9 * * 1"  # Mondays at 09:00 UTC
+
+  workflow_dispatch: {}  # Manual trigger for one-off sweeps
+
+permissions:
+  contents: write
+
+env:
+  PROTECTED_BRANCHES: "main master develop staging"
+
+jobs:
+  # ── Job 1: delete the head branch immediately when a PR is merged ──────────
+  prune-on-merge:
+    name: Delete merged branch
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete head branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const protected = process.env.PROTECTED_BRANCHES.split(' ');
+
+            if (protected.includes(branch)) {
+              core.info(`Skipping protected branch: ${branch}`);
+              return;
+            }
+
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${branch}`,
+              });
+              core.info(`Deleted branch: ${branch}`);
+            } catch (err) {
+              // Already deleted (e.g. GitHub's "auto-delete" setting is also on) — not an error
+              if (err.status === 422) {
+                core.info(`Branch already gone: ${branch}`);
+              } else {
+                core.setFailed(`Failed to delete ${branch}: ${err.message}`);
+              }
+            }
+
+  # ── Job 2: weekly sweep for merged branches that weren't caught above ──────
+  sweep-merged:
+    name: Sweep stale merged branches
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and prune fully-merged branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const protected = new Set(process.env.PROTECTED_BRANCHES.split(' '));
+            const { owner, repo } = context.repo;
+
+            const branches = await github.paginate(
+              github.rest.repos.listBranches,
+              { owner, repo, per_page: 100 }
+            );
+
+            const pruned = [];
+            const skipped = [];
+
+            for (const branch of branches) {
+              const name = branch.name;
+              if (protected.has(name)) continue;
+
+              // Skip branches that are the head of an open PR
+              const prs = await github.rest.pulls.list({
+                owner, repo,
+                state: 'open',
+                head: `${owner}:${name}`,
+                per_page: 1,
+              });
+              if (prs.data.length > 0) {
+                skipped.push(`${name} (open PR #${prs.data[0].number})`);
+                continue;
+              }
+
+              // ahead_by == 0 means every commit on the branch is already in main
+              const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                owner, repo,
+                basehead: `main...${name}`,
+              });
+              if (comparison.data.ahead_by > 0) {
+                skipped.push(`${name} (${comparison.data.ahead_by} unmerged commit(s))`);
+                continue;
+              }
+
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo,
+                  ref: `heads/${name}`,
+                });
+                pruned.push(name);
+                core.info(`Pruned: ${name}`);
+              } catch (err) {
+                core.warning(`Could not delete ${name}: ${err.message}`);
+              }
+            }
+
+            // Write a job summary
+            await core.summary
+              .addHeading('Branch cleanup sweep')
+              .addTable([
+                [{ data: 'Result', header: true }, { data: 'Branches', header: true }],
+                ['Pruned', pruned.length > 0 ? pruned.join(', ') : '—'],
+                ['Skipped', skipped.length > 0 ? skipped.join('<br>') : '—'],
+              ])
+              .write();
