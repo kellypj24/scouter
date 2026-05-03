@@ -17,6 +17,7 @@ type Expect struct {
 	SQLTable         string `yaml:"sql_table"`        // substring that must appear in SQL
 	SQLNotContains   string `yaml:"sql_not_contains"` // substring that must NOT appear
 	Unanswerable     bool   `yaml:"unanswerable"`
+	ContextRequired  bool   `yaml:"context_required"` // true means learned_patterns.yaml must have injected examples
 }
 
 type Fixture struct {

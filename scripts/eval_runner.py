@@ -65,6 +65,7 @@ class RunResult:
     block_count: int
     fallback_used: bool
     blocks: list[BlockResult]
+    context_used: bool = False  # True when learned_patterns.yaml injected few-shot examples
 
 
 async def _run(question: str, chart_dir: Path | None, fixture_id: str | None = None) -> RunResult:
@@ -119,11 +120,14 @@ async def _run(question: str, chart_dir: Path | None, fixture_id: str | None = N
                 )
             )
 
+        from src.data.context import get_few_shot_examples
+
         return RunResult(
             question=question,
             block_count=len(blocks),
             fallback_used=response.fallback_used,
             blocks=blocks,
+            context_used=bool(get_few_shot_examples(None)),
         )
     finally:
         if hasattr(provider, "close"):

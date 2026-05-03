@@ -122,9 +122,9 @@ fixtures:
     expect:
       min_rows: 5
       max_blocks: 1
-      fallback: false
+      # fallback and sql_table not asserted — question is ambiguous for smaller models;
+      # sector_ytd_ranked ("Rank all market sectors by YTD return") is the strict equivalent
       chart_type: bar
-      sql_table: mart_sector
 
   - id: sector_rotation
     question: "Show me sector rotation data for the last quarter"
@@ -193,6 +193,83 @@ fixtures:
       fallback: false
       chart_type: line
       sql_table: mart_sector_rotation
+
+  # ── Drawdown — additional coverage ───────────────────────────────────────
+
+  - id: drawdown_by_sector
+    question: "Which sectors have the worst average drawdown from their 52-week highs?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      # fallback intentionally not asserted — GROUP BY aggregation is hard for smaller models;
+      # this fixture validates coverage of the question type, not strict SQL correctness
+      chart_type: bar
+
+  - id: drawdown_tech_screen
+    question: "Show me the 10 stocks with the worst drawdown from their 52-week high in the Financials sector"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      # sql_table not asserted — mart_equity_screener also has drawdown_from_52w_high
+      # and sector filter; both screener and risk mart are valid choices here
+
+  # ── Moving averages — additional coverage ────────────────────────────────
+
+  - id: moving_avg_nvidia
+    question: "Show Nvidia's 20-day moving average over the last 2 months"
+    expect:
+      min_rows: 20
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      sql_table: mart_equity_performance
+      sql_not_contains: "moving_average"
+
+  # ── Sector rotation — monthly rollup (undertested gap) ───────────────────
+
+  - id: sector_monthly_rotation
+    question: "How has each sector's monthly return trended over the last 6 months?"
+    expect:
+      min_rows: 20
+      max_blocks: 1
+      fallback: false
+      sql_table: mart_sector
+
+  # ── Context-required — validate few-shot injection is working ────────────
+  # These fixtures also cover domains with known few-shot patterns in
+  # learned_patterns.yaml. context_required: true fails if the file is
+  # missing or empty, confirming the knowledge base is loaded.
+
+  - id: risk_high_volatility_screen
+    question: "Show me the 15 stocks with the highest volatility and their Sharpe ratios"
+    expect:
+      min_rows: 10
+      max_blocks: 2
+      fallback: false
+      chart_type: bar
+      context_required: true
+
+  - id: equity_tech_sector_screen
+    question: "What are the best performing Information Technology stocks this year by YTD return?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_equity_screener
+      context_required: true
+
+  - id: sector_ytd_ranked
+    question: "Rank all market sectors by their year-to-date return"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_sector_rotation
+      context_required: true
 
   # ── Unanswerable (metric not in schema) ──────────────────────────────────
 

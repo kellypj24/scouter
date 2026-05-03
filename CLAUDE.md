@@ -125,8 +125,9 @@ src/
       sql.py            # SQL generation prompt templates
       narrative.py      # Narrative/interpretation prompt templates
   data/
-    db.py               # DuckDB connection management
-    schema.py           # Schema introspection + prompt injection helpers
+    db.py               # DuckDB connection management (get_connection, get_read_connection, fresh_read_connection)
+    schema.py           # Schema introspection + prompt injection helpers (TTL cache, few-shot injection)
+    context.py          # Learned patterns loader — reads learned_patterns.yaml, get_few_shot_examples()
     loader.py           # CSV/Parquet → DuckDB ingestion (used by Dagster asset)
   viz/
     charts.py           # Plotly chart builders keyed to ChartType enum
@@ -145,6 +146,7 @@ pipeline/               # Dagster — data pipeline only, no LLM calls
     ingestion.py        # Raw data → DuckDB asset
     observability.py    # Syncs SQLite logs + Dagster run history → DuckDB raw_observability
     dbt_tests.py        # Runs dbt test, writes results directly to DuckDB (no SQLite)
+    schema_context.py   # dbt_docs_generate asset — runs dbt docs generate via subprocess
     transformations.py  # @dbt_assets
   checks/
     freshness.py        # Asset freshness checks
@@ -155,6 +157,7 @@ pipeline/               # Dagster — data pipeline only, no LLM calls
   sensors/
     data_freshness.py   # Polls DuckDB every 30 min, fires when data ≥ 1 day stale
     dbt_tests.py        # Polls DuckDB every 10 min, fires when historical_data date advances
+    dbt_docs.py         # Watches manifest.json mtime every 10 min, fires on dbt build
     observability.py    # Watches SQLite mtime every 5 min, fires when log file changes
   __init__.py           # Dagster Definitions entry point
 app/

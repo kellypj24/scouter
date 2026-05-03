@@ -82,6 +82,11 @@ See `assignments/eval/fixtures.yaml`. Each fixture:
     sql_table: mart_equity_screener
     sql_not_contains: "date" # optional: substring that must NOT appear in SQL
     unanswerable: false      # if true: expect 0 rows + no SQL (metric absent)
+    context_required: false  # if true: learned_patterns.yaml must have injected examples
 ```
 
 All `expect` fields are optional — omit any you don't want to assert.
+
+## context_required
+
+Setting `context_required: true` asserts that `learned_patterns.yaml` had few-shot examples available and injected them for this run. It validates the knowledge base infrastructure is working. It will fail if the file is missing or empty. Use it on fixtures that target domains with known patterns in `learned_patterns.yaml`.

@@ -15,7 +15,9 @@ select
     row_count,
     chart_source,
     news_items,
-    domain
+    domain,
+    mart,
+    sql_hash
 
 from source
 where request_id is not null

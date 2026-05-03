@@ -10,6 +10,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import hashlib as _hashlib
 import logging
 import re
 import time
@@ -25,7 +26,12 @@ from sqlglot import exp
 
 from src.agent.prompts.sql import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
-from src.data.schema import SchemaContext, build_column_lookup, load_schema_context
+from src.data.schema import (
+    SchemaContext,
+    build_column_lookup,
+    get_schema_prompt,
+    load_schema_context,
+)
 from src.models.response import QueryResult
 from src.observability.logger import get_obs_logger
 
@@ -76,6 +82,19 @@ _FUNDAMENTAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _DERIVABLE_SUFFIX = re.compile(r".*_\d+d$")  # e.g. vol_20d, ret_30d, ma_50d
+_MART_RE = re.compile(r"\b(mart_\w+)\b", re.IGNORECASE)
+
+
+def _extract_mart(sql: str) -> str | None:
+    """Return the first mart_* table name found in a SQL string."""
+    m = _MART_RE.search(sql)
+    return m.group(1).lower() if m else None
+
+
+def _sql_hash(sql: str) -> str:
+    """Return a 12-char MD5 of normalised SQL for deduplication in pattern tracking."""
+    normalized = re.sub(r"\s+", " ", sql.strip().lower())
+    return _hashlib.md5(normalized.encode()).hexdigest()[:12]
 
 
 def _is_derivable_metric(col_name: str) -> bool:
@@ -165,7 +184,7 @@ class QueryAgent:
             )
 
         domains = self.classify_domains(question)
-        schema_prompt = self._schema.to_prompt(domains=domains)
+        schema_prompt = get_schema_prompt(self._conn, domains=domains)
 
         sql: str | None = None
         last_error: str | None = None
@@ -175,7 +194,7 @@ class QueryAgent:
         for attempt, prompt_domains in enumerate([domains, None]):
             if attempt == 1:
                 # Widen schema on retry — maybe classification was too narrow.
-                schema_prompt = self._schema.to_prompt(domains=prompt_domains)
+                schema_prompt = get_schema_prompt(self._conn, domains=prompt_domains)
             t_gen = time.perf_counter()
             try:
                 sql = await self._generate_sql(question, schema_prompt, error_context=last_error)
@@ -255,6 +274,21 @@ class QueryAgent:
         result, df = self._execute(sql)
         exec_ms = int((time.perf_counter() - t_exec) * 1000)
         await obs.log_span("sql_exec", exec_ms, success=True, row_count=result.row_count)
+
+        # Log a candidate pattern when a genuine LLM-generated query succeeds.
+        # Worker-bee signal only — never self-promoting. Claude reviews mart_query_patterns
+        # and promotes to learned_patterns.yaml after eval validation.
+        if sql != _FALLBACK_SQL and result.row_count > 0:
+            await obs.log_span(
+                "query_pattern",
+                0,
+                success=True,
+                domain=",".join(domains) if domains else "all",
+                mart=_extract_mart(sql),
+                sql_hash=_sql_hash(sql),
+                row_count=result.row_count,
+            )
+
         return result, df
 
     def _column_known_anywhere(self, col_name: str) -> bool:

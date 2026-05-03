@@ -44,11 +44,11 @@ def data_freshness_sensor(context: SensorEvaluationContext) -> Iterator[RunReque
     Args:
         context: Dagster sensor evaluation context.
     """
-    from src.data.db import get_read_connection
+    from src.data.db import fresh_read_connection
 
     try:
-        conn = get_read_connection()
-        row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
+        with fresh_read_connection() as conn:
+            row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
     except Exception as exc:
         context.log.warning("Freshness check failed — skipping: %s", exc)
         return

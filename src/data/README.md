@@ -7,7 +7,8 @@ DuckDB access, schema introspection, and raw data loading. No LLM calls here.
 | File | Responsibility |
 |------|---------------|
 | `db.py` | DuckDB connection management — `get_read_connection()` for agent reads |
-| `schema.py` | Schema introspection + prompt injection helpers (mart → prompt string) |
+| `schema.py` | Schema introspection + prompt injection — reads dbt artifacts, TTL-cached, includes few-shot |
+| `context.py` | Claude-curated few-shot SQL examples from `learned_patterns.yaml` |
 | `loader.py` | CSV/Parquet → DuckDB ingestion, called by Dagster `raw_market_data` asset |
 | `fetcher.py` | yfinance data fetching — downloads prices, fundamentals, market snapshots |
 | `news.py` | Live news context via yfinance — appended to narrative prompts |
@@ -20,4 +21,12 @@ DuckDB access, schema introspection, and raw data loading. No LLM calls here.
 
 ## Schema injection
 
-`schema.py` provides `get_domain_schema(domain)` which returns a prompt-ready string of the relevant mart columns. The orchestrator classifies the question domain (equity / sector / risk) and injects only that subset to stay within the 4096-token budget.
+`schema.py::get_schema_prompt(conn, domains)` returns a prompt-ready string combining:
+1. **Structural schema** — mart column names, types, descriptions, and accepted values for low-cardinality VARCHARs (from dbt artifacts or INFORMATION_SCHEMA fallback)
+2. **Few-shot examples** — Claude-curated patterns from `learned_patterns.yaml` via `context.py`
+
+The schema context is TTL-cached (1 hour) so long-running processes pick up `dbt docs generate` output without restart. Call `reload_schema_context()` to force an immediate refresh.
+
+## learned_patterns.yaml
+
+Lives at the project root. Claude promotes validated patterns here after reviewing `mart_query_patterns` in DuckDB. The local agent reads this file but never writes to it.

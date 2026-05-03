@@ -5,6 +5,7 @@
 | `data_freshness.py` | `data_freshness_sensor` | `raw_market_data` | 30 min | MAX(date) in historical_data ≥ 1 day old |
 | `dbt_tests.py` | `dbt_test_after_ingest` | `dbt_test_runner` | 10 min | historical_data date advances (new ingest detected) |
 | `observability.py` | `obs_log_sensor` | `observability_sync` | 5 min | `logs/scouter_logs.db` mtime changes |
+| `dbt_docs.py` | `dbt_docs_sensor` | `dbt_docs_generate` | 10 min | `dbt/target/manifest.json` mtime changes after dbt build |
 
 ## Design principle
 
