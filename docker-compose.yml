@@ -1,13 +1,17 @@
-# Scouter core runtime — phase 1 of containerization.
-# Services: FastAPI harness (8001) → Go gateway (8080) → Streamlit app (8501).
-# Dagster pipeline and Ollama are added in phase 2 (see project notes).
+# Scouter full runtime.
+# Services: FastAPI harness (8001) → Go gateway (8080) → Streamlit app (8501)
+#           Ollama (11434) — local LLM, in-network so api reaches http://ollama:11434
+#           Dagster webserver (3000) + daemon — data pipeline, sensors
 #
 # Prerequisites:
 #   cp .env.example .env        # and fill in LLM provider credentials
 #   just ingest && just dbt     # populate data/scouter.duckdb before first run
+#   # Pull Ollama models on first run (one-time, persisted in ollama_data volume):
+#   docker compose run --rm ollama ollama pull qwen2.5:3b
+#   docker compose run --rm ollama ollama pull qwen2.5-coder:3b
 #
 # Usage:
-#   docker compose up           # start all three services
+#   docker compose up           # start all services
 #   docker compose up api       # start just the API (useful for debugging)
 #   docker compose logs -f      # tail logs across all services
 
@@ -23,12 +27,10 @@ services:
     environment:
       # Relative paths in .env resolve from /app inside the container
       DUCKDB_PATH: data/scouter.duckdb
-      # localhost inside a container is the container itself, not the Mac host.
-      # host.docker.internal reaches the Mac host (Docker Desktop for Mac/Windows).
-      # Phase 2 will replace this when Ollama moves into compose.
-      OLLAMA_HOST: http://host.docker.internal:11434
+      # Ollama is in-network — overrides the localhost URL in .env
+      OLLAMA_HOST: http://ollama:11434
     volumes:
-      # Bind-mount so Dagster (still local in phase 1) and the API share the same files
+      # Bind-mount so Dagster and the API share the same files
       - ./data:/app/data
       - ./logs:/app/logs
     healthcheck:
@@ -69,4 +71,53 @@ services:
       - gateway
     restart: unless-stopped
 
-volumes: {}
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  dagster-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run --no-dev dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.docker.yaml
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      DAGSTER_HOME: /dagster_home
+      DUCKDB_PATH: data/scouter.duckdb
+    volumes:
+      - ./dagster_home:/dagster_home
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  dagster-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run --no-dev dagster-daemon run -w workspace.docker.yaml
+    env_file: .env
+    environment:
+      DAGSTER_HOME: /dagster_home
+      DUCKDB_PATH: data/scouter.duckdb
+    volumes:
+      - ./dagster_home:/dagster_home
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - dagster-webserver
+    restart: unless-stopped
+
+volumes:
+  ollama_data: {}

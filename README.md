@@ -22,8 +22,14 @@ Financial data narrative agent. Ask a question in plain English; Scouter generat
 cp .env.example .env          # fill in LLM provider credentials
 just ingest && just dbt       # populate data/scouter.duckdb (one-time)
 just compose-build            # build images (re-run after code or dep changes)
-just compose                  # start FastAPI + gateway + Streamlit
+
+# Pull Ollama models into the named volume (one-time — persisted across restarts)
+docker compose run --rm ollama ollama pull qwen2.5:3b
+docker compose run --rm ollama ollama pull qwen2.5-coder:3b
+
+just compose                  # start all services
 # → app at http://localhost:8501
+# → Dagster UI at http://localhost:3000
 ```
 
 ### Local dev
