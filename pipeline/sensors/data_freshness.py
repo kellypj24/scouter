@@ -13,6 +13,7 @@ check; the sensor body becomes an event consumer rather than a poller.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from datetime import date
 
 from dagster import DefaultSensorStatus, RunRequest, SensorEvaluationContext, sensor
@@ -33,7 +34,7 @@ _STALE_AFTER_DAYS = 1
         f"{_STALE_AFTER_DAYS} day(s) old. Replaces the daily cron schedule."
     ),
 )
-def data_freshness_sensor(context: SensorEvaluationContext) -> None:
+def data_freshness_sensor(context: SensorEvaluationContext) -> Iterator[RunRequest]:
     """Request a market data refresh when DuckDB data is stale.
 
     Checks MAX(date) in historical_data. If it's older than _STALE_AFTER_DAYS,

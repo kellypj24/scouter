@@ -13,6 +13,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from dagster import asset
@@ -26,7 +27,7 @@ _SCHEMA = "raw_observability"
 _DBT_PROJECT_DIR = Path(__file__).resolve().parents[2] / "dbt"
 
 
-def _parse_results(run_results: dict) -> list[dict]:
+def _parse_results(run_results: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten dbt run_results.json into a list of row dicts."""
     run_at = run_results.get("metadata", {}).get("generated_at") or datetime.now(UTC).isoformat()
     rows = []
@@ -62,7 +63,7 @@ def _extract_model(test_name: str) -> str | None:
     """
     for prefix in ("not_null_", "unique_", "accepted_values_", "relationships_"):
         if test_name.startswith(prefix):
-            remainder = test_name[len(prefix):]
+            remainder = test_name[len(prefix) :]
             # Take the longest matching staging/mart prefix by splitting on '_'
             # and walking forward until we hit a known dbt name pattern
             parts = remainder.split("_")

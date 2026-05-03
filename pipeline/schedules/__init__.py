@@ -1,1 +1,3 @@
-all_schedules: list = []
+from dagster import ScheduleDefinition
+
+all_schedules: list[ScheduleDefinition] = []

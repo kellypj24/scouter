@@ -11,6 +11,7 @@ triggers exactly one test run, regardless of how many times the sensor polls.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from dagster import DefaultSensorStatus, RunRequest, SensorEvaluationContext, sensor
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
         "confirming the ingested data passes all quality checks."
     ),
 )
-def dbt_test_after_ingest(context: SensorEvaluationContext) -> None:
+def dbt_test_after_ingest(context: SensorEvaluationContext) -> Iterator[RunRequest]:
     """Run dbt tests when new market data is detected.
 
     Compares MAX(date) in historical_data against the stored cursor. If the

@@ -254,6 +254,15 @@ generates simple queries against pre-joined marts — not raw multi-table joins.
 **Adding a new domain**: Create `dbt/models/marts/<domain>/`, add schema config to `dbt_project.yml`,
 register with the schema injection classifier in `src/agent/orchestrator.py`.
 
+## CI Maintenance Rules
+
+When adding or moving source files, you MUST also:
+1. **Update `scripts/ci_test_resolver.py`** — add an explicit mapping in `EXPLICIT_MAPPINGS` if the new file maps to multiple test files or follows a non-standard naming pattern. Convention-based discovery (`tests/unit/test_{module}.py`) handles the standard case automatically.
+2. **Update CLAUDE.md and README.md** — the `staleness` CI job will block PRs that change `src/`, `api/`, or `pipeline/assets/` without touching these docs.
+3. **Add a test file** — the `staleness` CI job will hard-fail if a new source file has no corresponding `tests/unit/test_{module}.py`.
+
+The CI has three jobs: `lint` (ruff + mypy), `test` (targeted by changed files, falls back to full suite), `staleness` (docs + coverage gap check). All three must pass to merge.
+
 ## Anti-Patterns (Never Do)
 - LLM asserts a number without a backing SQL query
 - Synchronous Ollama calls anywhere
