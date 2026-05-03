@@ -29,7 +29,6 @@ executes it against DuckDB, and returns an annotated visual + prose narrative â€
 
 ### What's next (Phase 5 remaining)
 - Answer quality round 2 (use observability `mart_fallback_analysis` to identify highest-impact targets):
-  - Multi-stock time-series: `mart_equity_performance` CTE pattern is fragile for 3+ stocks over 6+ months
   - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 28 fixtures)
   - Chart quality scoring: Go scorer validates chart presence but not `x_col`/`y_col` sensibility
   - News â†’ tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)

@@ -109,6 +109,13 @@ _FUNDAMENTAL_PATTERN = re.compile(
 _DERIVABLE_SUFFIX = re.compile(r".*_\d+d$")  # e.g. vol_20d, ret_30d, ma_50d
 _MART_RE = re.compile(r"\b(mart_\w+)\b", re.IGNORECASE)
 
+# Detects trend/time-series intent in the user's question (used by Guard 4).
+_TREND_QUESTION_RE = re.compile(
+    r"\b(trend(?:ed|ing)?|over\s+the\s+last|price\s+history|historical|"
+    r"last\s+\d+\s+(?:day|week|month|year)s?)\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_mart(sql: str) -> str | None:
     """Return the first mart_* table name found in a SQL string."""
@@ -468,7 +475,7 @@ class QueryAgent:
                 "This metric is not available in the dataset — no query was generated."
             )
         sql = self._validate_sql(sql_response.sql)
-        errors = self._validate_schema(sql)
+        errors = self._validate_schema(sql, question=question)
         if errors:
             raise ValueError("\n".join(errors))
         return sql
@@ -542,7 +549,7 @@ class QueryAgent:
 
         return sql
 
-    def _validate_schema(self, sql: str) -> list[str]:
+    def _validate_schema(self, sql: str, question: str = "") -> list[str]:
         """Check SQL table and column references against the known schema.
 
         Parses the SQL AST via sqlglot and verifies that:
@@ -557,6 +564,8 @@ class QueryAgent:
 
         Args:
             sql: Transpiled, DDL-validated SQL string.
+            question: Original natural language question. When provided, enables
+                question-aware guards that cannot be inferred from SQL alone.
 
         Returns:
             List of human-readable error strings; empty means validation passed.
@@ -704,6 +713,35 @@ class QueryAgent:
                         "ORDER BY avg_drawdown_from_52w_high ASC LIMIT 10."
                     )
                     break
+
+        # Guard 4: screener-only query for a trend question.
+        # "Show me how today's top 5 companies have trended the last 3 months" often produces
+        # a screener-only snapshot (no mart_equity_performance join) because the model follows
+        # the RANKING rule first and misses the multi-stock CTE pattern.
+        # Only fires when the original question signals time-series intent — screener-only
+        # ranking queries ("top 10 by YTD return") are valid and must not be rejected.
+        performance_in_query = any(
+            "mart_equity_performance" in name for _, name in alias_to_table.values()
+        )
+        if (
+            screener_in_query
+            and not performance_in_query
+            and question
+            and _TREND_QUESTION_RE.search(question)
+        ):
+            errors.append(
+                "mart_equity_screener is a snapshot with no time dimension — it cannot answer "
+                "a trend question. Use the multi-stock CTE pattern:\n"
+                "  WITH top_stocks AS (\n"
+                "    SELECT ticker FROM main_equity.mart_equity_screener\n"
+                "    ORDER BY market_cap DESC LIMIT 5\n"
+                "  )\n"
+                "  SELECT p.ticker, p.date, p.close, p.daily_return\n"
+                "  FROM main_equity.mart_equity_performance p\n"
+                "  JOIN top_stocks t ON p.ticker = t.ticker\n"
+                "  WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'\n"
+                "  ORDER BY p.date ASC, p.ticker"
+            )
 
         return errors
 

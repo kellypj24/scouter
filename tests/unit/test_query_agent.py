@@ -234,6 +234,28 @@ def screener_and_risk_schema():
     )
 
 
+# ── Guard 4: screener-only query on a trend/time-series question ──────────────
+
+
+@pytest.fixture
+def screener_and_performance_schema():
+    """SchemaContext with both mart_equity_screener and mart_equity_performance."""
+    return SchemaContext(
+        models=[
+            _make_model(
+                "mart_equity_screener",
+                "equity",
+                ["ticker", "company_name", "sector", "ytd_return", "market_cap"],
+            ),
+            _make_model(
+                "mart_equity_performance",
+                "equity",
+                ["ticker", "date", "close", "daily_return", "ytd_return"],
+            ),
+        ]
+    )
+
+
 @pytest.fixture
 def sector_fund_agent(mock_provider, conn, sector_fund_schema):
     return QueryAgent(provider=mock_provider, conn=conn, schema_context=sector_fund_schema)
@@ -242,6 +264,13 @@ def sector_fund_agent(mock_provider, conn, sector_fund_schema):
 @pytest.fixture
 def risk_agent(mock_provider, conn, screener_and_risk_schema):
     return QueryAgent(provider=mock_provider, conn=conn, schema_context=screener_and_risk_schema)
+
+
+@pytest.fixture
+def multistock_agent(mock_provider, conn, screener_and_performance_schema):
+    return QueryAgent(
+        provider=mock_provider, conn=conn, schema_context=screener_and_performance_schema
+    )
 
 
 # ── Guard 1: mart_sector_fundamentals — no time dimension ─────────────────────
@@ -413,3 +442,67 @@ class TestClassifyDomainsSectorNameExpansion:
     def test_core_always_first_after_expansion(self, agent):
         domains = agent.classify_domains("Healthcare stock returns")
         assert domains[0] == "core"
+
+
+# ── Guard 4 (_validate_schema): screener-only query on trend question ─────────
+
+
+class TestValidateSchemaGuard4MultistockTrend:
+    def test_screener_only_with_trend_question_fires_error(self, multistock_agent):
+        sql = (
+            "SELECT ticker, company_name, market_cap "
+            "FROM main_equity.mart_equity_screener "
+            "ORDER BY market_cap DESC LIMIT 5"
+        )
+        question = "Show me how today's top 5 companies have trended the last 3 months"
+        errors = multistock_agent._validate_schema(sql, question=question)
+        assert any("time dimension" in e for e in errors)
+
+    def test_cte_pattern_with_performance_no_error(self, multistock_agent):
+        sql = (
+            "WITH top_stocks AS ("
+            "  SELECT ticker FROM main_equity.mart_equity_screener"
+            "  ORDER BY market_cap DESC LIMIT 5"
+            ") "
+            "SELECT p.ticker, p.date, p.close, p.daily_return "
+            "FROM main_equity.mart_equity_performance p "
+            "JOIN top_stocks t ON p.ticker = t.ticker "
+            "WHERE p.date >= CURRENT_DATE - INTERVAL '3 months' "
+            "ORDER BY p.date ASC, p.ticker"
+        )
+        question = "Show me how today's top 5 companies have trended the last 3 months"
+        errors = multistock_agent._validate_schema(sql, question=question)
+        assert not any("time dimension" in e for e in errors)
+
+    def test_screener_only_ranking_question_no_false_positive(self, multistock_agent):
+        # Valid screener-only ranking query — no trend intent → guard must not fire.
+        sql = (
+            "SELECT ticker, company_name, ytd_return "
+            "FROM main_equity.mart_equity_screener "
+            "ORDER BY ytd_return DESC LIMIT 10"
+        )
+        question = "What are the top 10 stocks by YTD return?"
+        errors = multistock_agent._validate_schema(sql, question=question)
+        assert not any("time dimension" in e for e in errors)
+
+    def test_no_question_provided_no_error(self, multistock_agent):
+        # When question is omitted (default ""), the guard must stay silent —
+        # backward compatibility for callers that do not pass the question.
+        sql = (
+            "SELECT ticker, market_cap "
+            "FROM main_equity.mart_equity_screener "
+            "ORDER BY market_cap DESC LIMIT 5"
+        )
+        errors = multistock_agent._validate_schema(sql)
+        assert not any("time dimension" in e for e in errors)
+
+    def test_trend_keywords_coverage(self, multistock_agent):
+        # "over the last" phrasing also fires the guard.
+        sql = (
+            "SELECT ticker, ytd_return "
+            "FROM main_equity.mart_equity_screener "
+            "ORDER BY ytd_return DESC LIMIT 5"
+        )
+        question = "Compare the top 5 companies over the last 6 months"
+        errors = multistock_agent._validate_schema(sql, question=question)
+        assert any("time dimension" in e for e in errors)

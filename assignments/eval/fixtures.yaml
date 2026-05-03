@@ -77,7 +77,7 @@ fixtures:
   - id: multistock_top5_trend
     question: "Show me how today's top 5 companies have trended the last 3 months"
     expect:
-      min_rows: 50
+      min_rows: 200
       max_blocks: 1
       fallback: false
       chart_type: line
