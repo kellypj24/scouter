@@ -223,6 +223,7 @@ def screener_and_risk_schema():
                 [
                     "ticker",
                     "sector",
+                    "drawdown_from_52w_high",
                     "volatility_pctile_in_sector",
                     "sharpe_pctile_in_sector",
                     "volatility_pctile_market",
@@ -340,7 +341,68 @@ class TestValidateSchemaGuard2PctileWrongTable:
         assert not any("Percentile-within-sector" in e for e in errors)
 
 
-# ── Guard 3: classify_domains sector-name expansion ───────────────────────────
+# ── Guard 3: avg_drawdown* on mart_risk_profile ───────────────────────────────
+
+
+class TestValidateSchemaGuard3AvgDrawdownWrongTable:
+    def test_unqualified_avg_drawdown_from_risk_profile_raises_error(self, risk_agent):
+        sql = (
+            "SELECT sector, avg_drawdown "
+            "FROM main_risk.mart_risk_profile "
+            "GROUP BY sector"
+        )
+        errors = risk_agent._validate_schema(sql)
+        # Guard message includes the exact correct query as a template.
+        assert any("avg_drawdown_from_52w_high" in e for e in errors)
+        assert any("Correct query" in e for e in errors)
+
+    def test_avg_drawdown_variant_name_raises_error(self, risk_agent):
+        # avg_drawdown_pct, avg_drawdown_52w — any avg_drawdown_* prefix triggers.
+        sql = (
+            "SELECT sector, avg_drawdown_52w "
+            "FROM main_risk.mart_risk_profile "
+            "GROUP BY sector"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert any("avg_drawdown_from_52w_high" in e for e in errors)
+
+    def test_qualified_avg_drawdown_on_risk_alias_raises_error(self, risk_agent):
+        sql = (
+            "SELECT r.sector, r.avg_drawdown "
+            "FROM main_risk.mart_risk_profile AS r"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert any("avg_drawdown_from_52w_high" in e for e in errors)
+
+    def test_per_ticker_drawdown_column_no_error(self, risk_agent):
+        # drawdown_from_52w_high is the real per-ticker column — should not fire.
+        sql = (
+            "SELECT ticker, drawdown_from_52w_high "
+            "FROM main_risk.mart_risk_profile "
+            "ORDER BY drawdown_from_52w_high ASC LIMIT 10"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert not any("avg_drawdown_from_52w_high" in e for e in errors)
+
+    def test_avg_function_alias_no_error(self, risk_agent):
+        # AVG(col) AS avg_drawdown — avg_drawdown is an alias, not a Column node.
+        sql = (
+            "SELECT sector, AVG(drawdown_from_52w_high) AS avg_drawdown "
+            "FROM main_risk.mart_risk_profile "
+            "GROUP BY sector"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert not any("avg_drawdown_from_52w_high" in e for e in errors)
+
+    def test_no_false_positive_without_risk_profile_table(self, sector_fund_agent):
+        # Guard 3 should not fire when mart_risk_profile is not in the query.
+        sql = "SELECT sector, avg_drawdown_from_52w_high FROM main_sector.mart_sector_fundamentals"
+        errors = sector_fund_agent._validate_schema(sql)
+        assert not any("mart_sector_fundamentals" in e and "avg_drawdown" in e for e in errors)
+
+
+# ── Guard 4 (classify_domains): sector-name expansion ────────────────────────
+# (formerly labelled Guard 3 in the classify_domains context)
 
 
 class TestClassifyDomainsSectorNameExpansion:

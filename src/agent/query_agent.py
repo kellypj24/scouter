@@ -669,6 +669,41 @@ class QueryAgent:
                     )
                     break
 
+        # Guard 3: avg_drawdown* on mart_risk_profile — that table stores per-ticker
+        # drawdown_from_52w_high only; there is no pre-aggregated avg_drawdown column.
+        # Sector-level average drawdown is pre-computed in mart_sector_fundamentals
+        # as avg_drawdown_from_52w_high.
+        risk_profile_in_query = any(
+            "mart_risk_profile" in name for _, name in alias_to_table.values()
+        )
+        if risk_profile_in_query:
+            for col in statement.find_all(exp.Column):
+                col_lower = col.name.lower()
+                if not (col_lower == "avg_drawdown" or col_lower.startswith("avg_drawdown_")):
+                    continue
+                qualifier = (col.table or "").lower()
+                qualifier_is_risk = (
+                    qualifier
+                    and qualifier in alias_to_table
+                    and "mart_risk_profile" in alias_to_table[qualifier][1]
+                )
+                qualifier_is_implicit_risk = (
+                    not qualifier and not has_ctes and len(alias_to_table) == 1
+                )
+                if qualifier_is_risk or qualifier_is_implicit_risk:
+                    errors.append(
+                        f"Column '{col.name}' does not exist in mart_risk_profile. "
+                        "mart_risk_profile has per-ticker drawdown_from_52w_high only — "
+                        "there is no pre-aggregated avg_drawdown column. "
+                        "For sector-level average drawdown use "
+                        "main_sector.mart_sector_fundamentals, which has "
+                        "avg_drawdown_from_52w_high already aggregated per sector. "
+                        "Correct query: SELECT sector, avg_drawdown_from_52w_high "
+                        "FROM main_sector.mart_sector_fundamentals "
+                        "ORDER BY avg_drawdown_from_52w_high ASC LIMIT 10."
+                    )
+                    break
+
         return errors
 
     def _execute(self, sql: str) -> tuple[QueryResult, pd.DataFrame]:
