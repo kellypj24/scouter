@@ -114,8 +114,10 @@ class NarrativeAgent:
             block = self._assemble_block(question, query_result, data, response)
             narr_ms = int((time.perf_counter() - t_narr) * 1000)
             chart_source = (
-                "llm" if block.chart_spec and response.chartable
-                else "inferred" if block.chart_spec
+                "llm"
+                if block.chart_spec and response.chartable
+                else "inferred"
+                if block.chart_spec
                 else "none"
             )
             await obs.log_span("narrative", narr_ms, success=True, chart_source=chart_source)

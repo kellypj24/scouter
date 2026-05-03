@@ -62,7 +62,7 @@ def _extract_model(test_name: str) -> str | None:
     """
     for prefix in ("not_null_", "unique_", "accepted_values_", "relationships_"):
         if test_name.startswith(prefix):
-            remainder = test_name[len(prefix):]
+            remainder = test_name[len(prefix) :]
             # Take the longest matching staging/mart prefix by splitting on '_'
             # and walking forward until we hit a known dbt name pattern
             parts = remainder.split("_")

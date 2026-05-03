@@ -303,8 +303,12 @@ class TestNewsInjection:
         mock_provider.complete_structured = AsyncMock(return_value=_make_response())
         mock_fetcher = AsyncMock(return_value=[])
         agent = NarrativeAgent(provider=mock_provider, news_fetcher=mock_fetcher)
-        no_ticker_qr = QueryResult(sql="SELECT 1", row_count=2, columns=["sector", "avg_ytd_return_ew"])
-        no_ticker_df = pd.DataFrame({"sector": ["Tech", "Finance"], "avg_ytd_return_ew": [0.15, 0.08]})
+        no_ticker_qr = QueryResult(
+            sql="SELECT 1", row_count=2, columns=["sector", "avg_ytd_return_ew"]
+        )
+        no_ticker_df = pd.DataFrame(
+            {"sector": ["Tech", "Finance"], "avg_ytd_return_ew": [0.15, 0.08]}
+        )
         await agent.run("Q", no_ticker_qr, no_ticker_df)
         mock_fetcher.assert_not_called()
 

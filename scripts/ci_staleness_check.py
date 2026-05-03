@@ -8,11 +8,11 @@ Warns when a PR:
 
 Exits non-zero if hard failures are found; prints warnings for soft signals.
 """
+
 import os
 import subprocess
 import sys
 from pathlib import Path
-
 
 # Source prefixes that require a test counterpart
 TESTED_PREFIXES = ("src/", "api/", "pipeline/assets/")
@@ -75,8 +75,7 @@ def missing_test_files(added_files: list[str]) -> list[tuple[str, str]]:
 
 def structure_changed(changed_files: list[str]) -> bool:
     return any(
-        f.endswith(".py") and any(f.startswith(p) for p in STRUCTURE_SIGNALS)
-        for f in changed_files
+        f.endswith(".py") and any(f.startswith(p) for p in STRUCTURE_SIGNALS) for f in changed_files
     )
 
 

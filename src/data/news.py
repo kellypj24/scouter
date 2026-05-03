@@ -33,7 +33,9 @@ class NewsItem:
     published_at: datetime
 
 
-def _parse_raw(ticker: str, raw: list[dict[str, Any]], cutoff: datetime, limit: int) -> list[NewsItem]:
+def _parse_raw(
+    ticker: str, raw: list[dict[str, Any]], cutoff: datetime, limit: int
+) -> list[NewsItem]:
     """Parse the yfinance news list into NewsItem objects.
 
     Handles both the legacy flat format (providerPublishTime as int) and the
