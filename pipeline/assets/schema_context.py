@@ -41,7 +41,9 @@ def dbt_docs_generate(context) -> None:  # type: ignore[no-untyped-def]
     dbt: DbtCliResource = context.resources.dbt
 
     try:
-        dbt.cli(["docs", "generate"], context=context).wait()
+        # Do not pass context= here — that's only valid for @dbt_assets decorated assets.
+        # Without it, dbt runs the command without trying to propagate dbt metadata.
+        dbt.cli(["docs", "generate"]).wait()
         context.log.info("dbt docs generate completed successfully")
     except Exception as exc:
         context.log.warning("dbt docs generate finished with errors: %s", exc)

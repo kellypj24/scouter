@@ -39,11 +39,11 @@ def dbt_test_after_ingest(context: SensorEvaluationContext) -> Iterator[RunReque
     Args:
         context: Dagster sensor evaluation context.
     """
-    from src.data.db import get_read_connection
+    from src.data.db import fresh_read_connection
 
     try:
-        conn = get_read_connection()
-        row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
+        with fresh_read_connection() as conn:
+            row = conn.execute("SELECT MAX(date) FROM historical_data").fetchone()
     except Exception as exc:
         context.log.warning("Could not read historical_data for dbt test trigger: %s", exc)
         return
