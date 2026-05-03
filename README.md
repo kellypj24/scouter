@@ -95,9 +95,18 @@ Dagster pipelines are driven by sensors rather than cron schedules. Sensors self
 |--------|-------|-----------|
 | `data_freshness_sensor` | every 30 min | `historical_data` is ≥ 1 day stale |
 | `dbt_test_after_ingest` | every 10 min | `historical_data` date advances (new ingest) |
+| `dbt_docs_sensor` | every 10 min | `dbt/target/manifest.json` mtime advances (dbt build ran) |
 | `obs_log_sensor` | every 5 min | `logs/scouter_logs.db` file is modified |
 
 All sensors start in `RUNNING` status so they activate as soon as `just pipeline` starts.
+
+### Contextual knowledge base
+
+`learned_patterns.yaml` in the project root holds Claude-curated few-shot SQL examples. These are injected into every SQL generation prompt (after the schema block) to reduce hallucination on known-good query shapes.
+
+- **Read path**: `src/data/context.py` loads and caches the file at startup; `get_schema_prompt()` appends the relevant domain's examples
+- **Write path**: Claude (developer agent) only — local Scouter agent never writes this file
+- **Refresh path**: `dbt_docs_sensor` → `dbt_docs_generate` keeps `catalog.json` current so the schema injector always has column statistics alongside the few-shot examples
 
 ## Observability
 

@@ -10,6 +10,7 @@ run_key so duplicate evaluations within the same build window are no-ops.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from dagster import DefaultSensorStatus, RunRequest, SensorEvaluationContext, sensor
@@ -28,7 +29,7 @@ _MANIFEST = Path(__file__).resolve().parents[2] / "dbt" / "target" / "manifest.j
         "Keeps catalog.json current so schema injection has fresh column statistics."
     ),
 )
-def dbt_docs_sensor(context: SensorEvaluationContext) -> None:
+def dbt_docs_sensor(context: SensorEvaluationContext) -> Iterator[RunRequest]:
     """Request a docs generate when dbt has run a new build.
 
     Compares manifest.json mtime to the stored cursor. A new mtime means
