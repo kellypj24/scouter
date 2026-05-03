@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import duckdb
 import pytest
@@ -21,10 +22,8 @@ def reset_singletons():
     for attr in ("_connection", "_read_connection"):
         conn = getattr(db_mod, attr, None)
         if conn is not None:
-            try:
+            with contextlib.suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
     db_mod._connection = None
     db_mod._read_connection = None
 
@@ -35,10 +34,12 @@ class TestFreshReadConnection:
     def test_yields_a_connection(self, tmp_path):
         db_path = str(tmp_path / "test.duckdb")
         duckdb.connect(db_path).close()  # pre-create so read-only open succeeds
-        with patch.dict(os.environ, {"DUCKDB_PATH": db_path}):
-            with db_mod.fresh_read_connection() as conn:
-                assert conn is not None
-                assert isinstance(conn, duckdb.DuckDBPyConnection)
+        with (
+            patch.dict(os.environ, {"DUCKDB_PATH": db_path}),
+            db_mod.fresh_read_connection() as conn,
+        ):
+            assert conn is not None
+            assert isinstance(conn, duckdb.DuckDBPyConnection)
 
     def test_connection_closed_after_context_exit(self, tmp_path):
         """Verify the connection is closed (not cached) after the context exits."""
@@ -46,12 +47,14 @@ class TestFreshReadConnection:
         # Pre-create a writable DB so the read-only open succeeds.
         duckdb.connect(db_path).close()
 
-        with patch.dict(os.environ, {"DUCKDB_PATH": db_path}):
-            with db_mod.fresh_read_connection() as conn:
-                held_conn = conn
+        with (
+            patch.dict(os.environ, {"DUCKDB_PATH": db_path}),
+            db_mod.fresh_read_connection() as conn,
+        ):
+            held_conn = conn
 
         # After exit, the connection should be closed — executing should raise.
-        with pytest.raises(Exception):
+        with pytest.raises(duckdb.ConnectionException):
             held_conn.execute("SELECT 1")
 
     def test_does_not_pollute_singleton_cache(self, tmp_path):
@@ -59,9 +62,8 @@ class TestFreshReadConnection:
         db_path = str(tmp_path / "test.duckdb")
         duckdb.connect(db_path).close()
 
-        with patch.dict(os.environ, {"DUCKDB_PATH": db_path}):
-            with db_mod.fresh_read_connection():
-                pass
+        with patch.dict(os.environ, {"DUCKDB_PATH": db_path}), db_mod.fresh_read_connection():
+            pass
 
         assert db_mod._read_connection is None
 
@@ -92,7 +94,8 @@ class TestSensorConnectionSafety:
         asset write connections from worker subprocesses.
         """
         path = "pipeline/sensors/data_freshness.py"
-        source = open(path).read()
+        with open(path) as f:
+            source = f.read()
         assert "fresh_read_connection" in source, (
             f"{path}: sensor must use fresh_read_connection() not get_read_connection()"
         )
@@ -103,7 +106,8 @@ class TestSensorConnectionSafety:
     def test_dbt_test_sensor_uses_fresh_connection(self):
         """dbt_test_after_ingest must use fresh_read_connection, not get_read_connection."""
         path = "pipeline/sensors/dbt_tests.py"
-        source = open(path).read()
+        with open(path) as f:
+            source = f.read()
         assert "fresh_read_connection" in source, (
             f"{path}: sensor must use fresh_read_connection() not get_read_connection()"
         )
@@ -123,7 +127,8 @@ class TestDbtDocsGenerateAsset:
         different error when processing dbt events. Using subprocess avoids all of this.
         """
         path = "pipeline/assets/schema_context.py"
-        source = open(path).read()
+        with open(path) as f:
+            source = f.read()
         assert "subprocess" in source, (
             f"{path}: dbt_docs_generate must use subprocess to run dbt docs generate"
         )

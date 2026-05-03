@@ -10,6 +10,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import hashlib as _hashlib
 import logging
 import re
 import time
@@ -23,12 +24,14 @@ import sqlglot.errors
 from pydantic import BaseModel
 from sqlglot import exp
 
-import hashlib as _hashlib
-
 from src.agent.prompts.sql import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
-from src.data.context import get_few_shot_examples
-from src.data.schema import SchemaContext, build_column_lookup, get_schema_prompt, load_schema_context
+from src.data.schema import (
+    SchemaContext,
+    build_column_lookup,
+    get_schema_prompt,
+    load_schema_context,
+)
 from src.models.response import QueryResult
 from src.observability.logger import get_obs_logger
 

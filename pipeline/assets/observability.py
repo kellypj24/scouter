@@ -53,19 +53,11 @@ def _read_dagster_runs(instance: DagsterInstance) -> pd.DataFrame:
     rows = []
     for run in runs:
         start_ts = (
-            datetime.fromtimestamp(run.start_time, tz=UTC).isoformat()  # type: ignore[attr-defined]
-            if run.start_time  # type: ignore[attr-defined]
-            else None
+            datetime.fromtimestamp(run.start_time, tz=UTC).isoformat() if run.start_time else None
         )
-        end_ts = (
-            datetime.fromtimestamp(run.end_time, tz=UTC).isoformat()  # type: ignore[attr-defined]
-            if run.end_time  # type: ignore[attr-defined]
-            else None
-        )
+        end_ts = datetime.fromtimestamp(run.end_time, tz=UTC).isoformat() if run.end_time else None
         duration_ms = (
-            int((run.end_time - run.start_time) * 1000)  # type: ignore[attr-defined]
-            if run.start_time and run.end_time  # type: ignore[attr-defined]
-            else None
+            int((run.end_time - run.start_time) * 1000) if run.start_time and run.end_time else None
         )
         rows.append(
             {
