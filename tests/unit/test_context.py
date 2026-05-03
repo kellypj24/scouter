@@ -34,13 +34,15 @@ class TestGetFewShotExamples:
 
     def test_returns_examples_for_matching_domain(self, tmp_path, monkeypatch):
         f = tmp_path / "patterns.yaml"
-        f.write_text(textwrap.dedent("""\
+        f.write_text(
+            textwrap.dedent("""\
             patterns:
               - id: test_equity
                 domain: equity
                 notes: top performers
                 example_sql: "SELECT ticker FROM mart_equity_performance LIMIT 5"
-        """))
+        """)
+        )
         monkeypatch.setattr(ctx_mod, "_PATTERNS_FILE", f)
         result = ctx_mod.get_few_shot_examples("equity")
         assert "SELECT ticker FROM mart_equity_performance" in result
@@ -48,20 +50,23 @@ class TestGetFewShotExamples:
 
     def test_no_cross_domain_leakage(self, tmp_path, monkeypatch):
         f = tmp_path / "patterns.yaml"
-        f.write_text(textwrap.dedent("""\
+        f.write_text(
+            textwrap.dedent("""\
             patterns:
               - id: equity_only
                 domain: equity
                 notes: equity pattern
                 example_sql: "SELECT ticker FROM mart_equity_performance LIMIT 5"
-        """))
+        """)
+        )
         monkeypatch.setattr(ctx_mod, "_PATTERNS_FILE", f)
         result = ctx_mod.get_few_shot_examples("risk")
         assert result == ""
 
     def test_none_domain_returns_all_patterns(self, tmp_path, monkeypatch):
         f = tmp_path / "patterns.yaml"
-        f.write_text(textwrap.dedent("""\
+        f.write_text(
+            textwrap.dedent("""\
             patterns:
               - id: eq
                 domain: equity
@@ -71,7 +76,8 @@ class TestGetFewShotExamples:
                 domain: risk
                 notes: risk
                 example_sql: "SELECT 2"
-        """))
+        """)
+        )
         monkeypatch.setattr(ctx_mod, "_PATTERNS_FILE", f)
         result = ctx_mod.get_few_shot_examples(None)
         assert "SELECT 1" in result
@@ -79,7 +85,7 @@ class TestGetFewShotExamples:
 
     def test_caps_at_max_examples(self, tmp_path, monkeypatch):
         patterns = "\n".join(
-            f"  - id: p{i}\n    domain: equity\n    notes: n{i}\n    example_sql: \"SELECT {i}\""
+            f'  - id: p{i}\n    domain: equity\n    notes: n{i}\n    example_sql: "SELECT {i}"'
             for i in range(10)
         )
         f = tmp_path / "patterns.yaml"

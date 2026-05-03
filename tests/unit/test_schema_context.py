@@ -30,7 +30,9 @@ class TestDbtDocsGenerateUsesSubprocess:
         from pipeline.assets.schema_context import dbt_docs_generate
 
         with (
-            patch("pipeline.assets.schema_context.subprocess.run", return_value=_mock_result()) as mock_run,
+            patch(
+                "pipeline.assets.schema_context.subprocess.run", return_value=_mock_result()
+            ) as mock_run,
             build_asset_context() as ctx,
         ):
             dbt_docs_generate(ctx)
@@ -45,7 +47,10 @@ class TestDbtDocsGenerateUsesSubprocess:
         from pipeline.assets.schema_context import dbt_docs_generate
 
         with (
-            patch("pipeline.assets.schema_context.subprocess.run", return_value=_mock_result(returncode=1, stderr="dbt error")),
+            patch(
+                "pipeline.assets.schema_context.subprocess.run",
+                return_value=_mock_result(returncode=1, stderr="dbt error"),
+            ),
             build_asset_context() as ctx,
         ):
             dbt_docs_generate(ctx)  # must not raise
