@@ -21,7 +21,8 @@ Financial data narrative agent. Ask a question in plain English; Scouter generat
 ```bash
 cp .env.example .env          # fill in LLM provider credentials
 just ingest && just dbt       # populate data/scouter.duckdb (one-time)
-just compose                  # builds and starts FastAPI + gateway + Streamlit
+just compose-build            # build images (re-run after code or dep changes)
+just compose                  # start FastAPI + gateway + Streamlit
 # → app at http://localhost:8501
 ```
 
