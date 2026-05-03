@@ -7,9 +7,9 @@ immediately after use to avoid blocking write connections in worker subprocesses
 """
 
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 import duckdb
 
@@ -57,7 +57,7 @@ def get_read_connection() -> duckdb.DuckDBPyConnection:
 
 
 @contextmanager
-def fresh_read_connection() -> Generator[duckdb.DuckDBPyConnection, None, None]:
+def fresh_read_connection() -> Generator[duckdb.DuckDBPyConnection]:
     """Open a short-lived read-only connection and close it on exit.
 
     Use this in Dagster sensors and any other code that runs in long-lived
