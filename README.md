@@ -16,18 +16,23 @@ Financial data narrative agent. Ask a question in plain English; Scouter generat
 
 ## Quick start
 
+### Containerised (recommended)
+
 ```bash
-# Install Python deps
+cp .env.example .env          # fill in LLM provider credentials
+just ingest && just dbt       # populate data/scouter.duckdb (one-time)
+just compose                  # builds and starts FastAPI + gateway + Streamlit
+# → app at http://localhost:8501
+```
+
+### Local dev
+
+```bash
 uv sync
-
-# Copy env and set your LLM provider + API key
 cp .env.example .env
-
-# Run a single question (no UI needed)
 just ask "What are the top 10 best performing stocks this year?"
-
-# Start the Streamlit UI
-just run
+just run          # Streamlit UI (requires just api + just gateway running)
+just serve        # starts all three together
 ```
 
 ## Asking questions headlessly
