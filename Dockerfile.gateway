@@ -1,0 +1,13 @@
+# Go gateway — multi-stage build.
+# Stage 1: compile. Stage 2: minimal runtime image with just the binary.
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /build
+COPY gateway/ .
+# No external deps — stdlib only, so no go.sum and no go mod download needed.
+RUN go build -o scouter-gateway .
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+COPY --from=builder /build/scouter-gateway /scouter-gateway
+ENTRYPOINT ["/scouter-gateway"]

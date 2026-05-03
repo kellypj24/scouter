@@ -1,47 +1,123 @@
+# Scouter full runtime.
+# Services: FastAPI harness (8001) → Go gateway (8080) → Streamlit app (8501)
+#           Ollama (11434) — local LLM, in-network so api reaches http://ollama:11434
+#           Dagster webserver (3000) + daemon — data pipeline, sensors
+#
+# Prerequisites:
+#   cp .env.example .env        # and fill in LLM provider credentials
+#   just ingest && just dbt     # populate data/scouter.duckdb before first run
+#   # Pull Ollama models on first run (one-time, persisted in ollama_data volume):
+#   docker compose run --rm ollama ollama pull qwen2.5:3b
+#   docker compose run --rm ollama ollama pull qwen2.5-coder:3b
+#
+# Usage:
+#   docker compose up           # start all services
+#   docker compose up api       # start just the API (useful for debugging)
+#   docker compose logs -f      # tail logs across all services
+
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run --no-dev uvicorn api.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    env_file: .env
+    environment:
+      # Relative paths in .env resolve from /app inside the container
+      DUCKDB_PATH: data/scouter.duckdb
+      # Ollama is in-network — overrides the localhost URL in .env
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      # Bind-mount so Dagster and the API share the same files
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    command: ["-port", "8080", "-upstream", "http://api:8001"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      uv run --no-dev streamlit run app/main.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      SCOUTER_GATEWAY_URL: http://gateway:8080
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
   ollama:
-    image: ollama/ollama:latest
-    container_name: scouter-ollama
+    image: ollama/ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
-  dagster:
-    build: .
-    container_name: scouter-dagster
+  dagster-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run --no-dev dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.docker.yaml
     ports:
       - "3000:3000"
-    volumes:
-      - ./data:/app/data
-      - ./dbt:/app/dbt
-      - ./pipeline:/app/pipeline
+    env_file: .env
     environment:
-      - DAGSTER_HOME=/app/dagster_home
-      - DUCKDB_PATH=/app/data/scouter.duckdb
-      - OLLAMA_HOST=http://ollama:11434
-    depends_on:
-      - ollama
-    command: uv run dagster-webserver -h 0.0.0.0 -p 3000
+      DAGSTER_HOME: /dagster_home
+      DUCKDB_PATH: data/scouter.duckdb
+    volumes:
+      - ./dagster_home:/dagster_home
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
 
-  app:
-    build: .
-    container_name: scouter-app
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/app/data
-      - ./src:/app/src
-      - ./app:/app/app
+  dagster-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run --no-dev dagster-daemon run -w workspace.docker.yaml
+    env_file: .env
     environment:
-      - DUCKDB_PATH=/app/data/scouter.duckdb
-      - OLLAMA_HOST=http://ollama:11434
-      - OLLAMA_MODEL=codellama
+      DAGSTER_HOME: /dagster_home
+      DUCKDB_PATH: data/scouter.duckdb
+    volumes:
+      - ./dagster_home:/dagster_home
+      - ./data:/app/data
+      - ./logs:/app/logs
     depends_on:
-      - ollama
-      - dagster
-    command: uv run streamlit run app/main.py --server.port=8501 --server.address=0.0.0.0
+      - dagster-webserver
+    restart: unless-stopped
 
 volumes:
-  ollama_data:
+  ollama_data: {}

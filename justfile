@@ -98,6 +98,23 @@ eval-go-filter substr concurrency="3" timeout="3m":
 api:
     uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
 
+# Build container images (run after code or dep changes) and prune dangling layers
+compose-build:
+    docker compose build
+    docker image prune -f
+
+# Start containerised core runtime (FastAPI + gateway + Streamlit)
+compose:
+    docker compose up
+
+# Start in background
+compose-up:
+    docker compose up -d
+
+# Tear down containers (keeps volumes)
+compose-down:
+    docker compose down
+
 # Build Go gateway binary
 gateway-build:
     go -C gateway build -o scouter-gateway .
