@@ -98,9 +98,10 @@ eval-go-filter substr concurrency="3" timeout="3m":
 api:
     uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
 
-# Build container images (run after code or dep changes)
+# Build container images (run after code or dep changes) and prune dangling layers
 compose-build:
     docker compose build
+    docker image prune -f
 
 # Start containerised core runtime (FastAPI + gateway + Streamlit)
 compose:
