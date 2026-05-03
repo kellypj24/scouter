@@ -194,6 +194,20 @@ fixtures:
       chart_type: line
       sql_table: mart_sector_rotation
 
+  # ── Sector snapshot — Guard 1 regression (no time dimension) ─────────────
+  # mart_sector_fundamentals is a current snapshot; the LLM occasionally adds
+  # date/year filters on first attempt. Guard 1 catches this and forces a clean
+  # snapshot query on retry. sql_table asserted to confirm the right mart is used.
+
+  - id: sector_fundamentals_snapshot
+    question: "Compare each sector's average Sharpe ratio and volatility right now"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_sector_fundamentals
+
   # ── Drawdown — additional coverage ───────────────────────────────────────
 
   - id: drawdown_by_sector

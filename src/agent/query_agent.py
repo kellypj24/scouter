@@ -61,6 +61,29 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# GICS sector labels and common synonyms that the LLM uses in questions but don't appear
+# in _DOMAIN_KEYWORDS.  When any of these appear alongside a non-sector domain match we
+# expand the domain list to include "sector" so the mart_sector_* schemas are injected.
+_SECTOR_NAME_KEYWORDS: frozenset[str] = frozenset({
+    "technology",
+    "tech",
+    "healthcare",
+    "health care",
+    "financials",
+    "financial",
+    "energy",
+    "materials",
+    "industrials",
+    "industrial",
+    "utilities",
+    "communication",
+    "consumer discretionary",
+    "consumer staples",
+    "real estate",
+    "pharma",
+    "biotech",
+})
+
 # Patterns that indicate a column is a derived/computed metric rather than a
 # stored column — moving averages, exponential averages, RSI, rolling windows, etc.
 _DERIVABLE_PREFIXES = ("ma_", "sma_", "ema_", "rsi_", "macd_", "bb_", "atr_", "obv_")
@@ -347,6 +370,12 @@ class QueryAgent:
 
         Returns None (= all domains) if no keywords match, so the LLM
         sees the full schema rather than an empty one.
+
+        Fallback for multi-domain questions: GICS sector labels
+        (e.g. "Technology", "Healthcare") are not in _DOMAIN_KEYWORDS but
+        clearly require the sector mart.  When any sector name appears
+        alongside at least one other matched domain, the sector domain is
+        added even if no short keyword ("sector", "industry" …) fired.
         """
         q = question.lower()
         matched = [
@@ -357,6 +386,15 @@ class QueryAgent:
         # Always include core — dims and facts underpin every mart.
         if matched:
             matched = list(dict.fromkeys(["core"] + matched))
+
+        # Expansion guard: GICS sector names that don't appear in _DOMAIN_KEYWORDS.
+        # Only expand when the question already matched at least one domain — avoids
+        # turning "Technology data" (no financial keywords) into a sector-only query
+        # when None (all schemas) is already the right answer.
+        if matched and "sector" not in matched:
+            if any(name in q for name in _SECTOR_NAME_KEYWORDS):
+                matched = list(dict.fromkeys(matched + ["sector"]))
+
         return matched or None
 
     async def _generate_sql(
@@ -581,6 +619,53 @@ class QueryAgent:
                 if col.name.lower() == "date" and not col.table:
                     errors.append(
                         self._missing_column_error("date", "main_equity", "mart_equity_screener")
+                    )
+                    break
+
+        # Guard 1: mart_sector_fundamentals is a current snapshot with no time dimension.
+        # The LLM frequently hallucinates date/year/month/quarter columns on first attempt.
+        sector_fund_in_query = any(
+            "mart_sector_fundamentals" in name for _, name in alias_to_table.values()
+        )
+        if sector_fund_in_query:
+            for col in statement.find_all(exp.Column):
+                if col.name.lower() in ("year", "date", "month", "quarter") and not col.table:
+                    errors.append(
+                        "mart_sector_fundamentals has no time-dimension columns (no date, year, "
+                        "month, or quarter). It is a current snapshot. Remove all date filters "
+                        "and WHERE clauses. Use ORDER BY to rank results. "
+                        "Available columns: sector, avg_ytd_return_ew, avg_mtd_return_ew, "
+                        "avg_volatility_20d, avg_sharpe_20d, avg_drawdown_from_52w_high, "
+                        "median_ytd_return, pct_constituents_positive_ytd, ticker_count, "
+                        "total_market_cap, avg_market_cap."
+                    )
+                    break
+
+        # Guard 2: _pctile_in_sector columns (volatility_pctile_in_sector,
+        # sharpe_pctile_in_sector) live on mart_risk_profile, not mart_equity_screener.
+        # Catch the column being referenced in a query that only uses screener as its source.
+        if screener_in_query:
+            for col in statement.find_all(exp.Column):
+                if not col.name.lower().endswith("_pctile_in_sector"):
+                    continue
+                qualifier = (col.table or "").lower()
+                # Explicitly qualified to a screener alias → definitely wrong table.
+                qualifier_is_screener = (
+                    qualifier
+                    and qualifier in alias_to_table
+                    and "mart_equity_screener" in alias_to_table[qualifier][1]
+                )
+                # Unqualified in a single-table screener query → implicitly wrong table.
+                qualifier_is_implicit_screener = (
+                    not qualifier and not has_ctes and len(alias_to_table) == 1
+                )
+                if qualifier_is_screener or qualifier_is_implicit_screener:
+                    errors.append(
+                        f"Column '{col.name}' does not exist in mart_equity_screener. "
+                        "Percentile-within-sector columns (volatility_pctile_in_sector, "
+                        "sharpe_pctile_in_sector) live in main_risk.mart_risk_profile. "
+                        "Change the FROM clause to use main_risk.mart_risk_profile instead "
+                        "of main_equity.mart_equity_screener."
                     )
                     break
 

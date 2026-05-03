@@ -10,6 +10,16 @@ from src.agent.query_agent import _FALLBACK_SQL, QueryAgent, SQLResponse
 from src.data.schema import ColumnSchema, ModelSchema, SchemaContext
 
 
+def _make_model(name: str, domain: str, cols: list[str]) -> ModelSchema:
+    """Helper: build a ModelSchema with the given column names."""
+    return ModelSchema(
+        name=name,
+        domain=domain,
+        description="",
+        columns=[ColumnSchema(name=c, dtype="VARCHAR") for c in cols],
+    )
+
+
 @pytest.fixture
 def schema_context():
     return SchemaContext(
@@ -166,3 +176,203 @@ class TestRun:
         result, df = await agent.run("What is the top stock?")
         assert mock_provider.complete_structured.call_count == 2
         assert result.row_count == 1
+
+
+# ── Fixtures shared by the _validate_schema guard tests ───────────────────────
+
+
+@pytest.fixture
+def sector_fund_schema():
+    """SchemaContext that includes mart_sector_fundamentals."""
+    return SchemaContext(
+        models=[
+            _make_model(
+                "mart_sector_fundamentals",
+                "sector",
+                [
+                    "sector",
+                    "avg_ytd_return_ew",
+                    "avg_mtd_return_ew",
+                    "avg_volatility_20d",
+                    "avg_sharpe_20d",
+                    "avg_drawdown_from_52w_high",
+                    "median_ytd_return",
+                    "pct_constituents_positive_ytd",
+                    "ticker_count",
+                    "total_market_cap",
+                    "avg_market_cap",
+                ],
+            )
+        ]
+    )
+
+
+@pytest.fixture
+def screener_and_risk_schema():
+    """SchemaContext that includes both mart_equity_screener and mart_risk_profile."""
+    return SchemaContext(
+        models=[
+            _make_model(
+                "mart_equity_screener",
+                "equity",
+                ["ticker", "sector", "ytd_return", "volatility_20d", "sharpe_20d"],
+            ),
+            _make_model(
+                "mart_risk_profile",
+                "risk",
+                [
+                    "ticker",
+                    "sector",
+                    "volatility_pctile_in_sector",
+                    "sharpe_pctile_in_sector",
+                    "volatility_pctile_market",
+                    "sharpe_pctile_market",
+                ],
+            ),
+        ]
+    )
+
+
+@pytest.fixture
+def sector_fund_agent(mock_provider, conn, sector_fund_schema):
+    return QueryAgent(provider=mock_provider, conn=conn, schema_context=sector_fund_schema)
+
+
+@pytest.fixture
+def risk_agent(mock_provider, conn, screener_and_risk_schema):
+    return QueryAgent(
+        provider=mock_provider, conn=conn, schema_context=screener_and_risk_schema
+    )
+
+
+# ── Guard 1: mart_sector_fundamentals — no time dimension ─────────────────────
+
+
+class TestValidateSchemaGuard1SectorFundamentals:
+    def test_bare_year_col_raises_error(self, sector_fund_agent):
+        sql = (
+            "SELECT year, sector, avg_ytd_return_ew "
+            "FROM main_sector.mart_sector_fundamentals "
+            "WHERE year = 2024"
+        )
+        errors = sector_fund_agent._validate_schema(sql)
+        assert any("time-dimension" in e for e in errors)
+
+    def test_bare_date_col_raises_error(self, sector_fund_agent):
+        sql = (
+            "SELECT date, sector FROM main_sector.mart_sector_fundamentals "
+            "WHERE date >= '2024-01-01'"
+        )
+        errors = sector_fund_agent._validate_schema(sql)
+        assert any("time-dimension" in e for e in errors)
+
+    def test_bare_month_col_raises_error(self, sector_fund_agent):
+        sql = "SELECT month, sector FROM main_sector.mart_sector_fundamentals"
+        errors = sector_fund_agent._validate_schema(sql)
+        assert any("time-dimension" in e for e in errors)
+
+    def test_bare_quarter_col_raises_error(self, sector_fund_agent):
+        sql = "SELECT quarter, sector FROM main_sector.mart_sector_fundamentals"
+        errors = sector_fund_agent._validate_schema(sql)
+        assert any("time-dimension" in e for e in errors)
+
+    def test_valid_snapshot_query_no_error(self, sector_fund_agent):
+        sql = (
+            "SELECT sector, avg_ytd_return_ew "
+            "FROM main_sector.mart_sector_fundamentals "
+            "ORDER BY avg_ytd_return_ew DESC"
+        )
+        errors = sector_fund_agent._validate_schema(sql)
+        assert not any("time-dimension" in e for e in errors)
+
+    def test_no_false_positive_without_sector_fund_table(self, agent):
+        # year column in an unrelated query should not trigger Guard 1.
+        sql = "SELECT year FROM test_data"
+        errors = agent._validate_schema(sql)
+        assert not any("time-dimension" in e for e in errors)
+
+
+# ── Guard 2: _pctile_in_sector on wrong table ─────────────────────────────────
+
+
+class TestValidateSchemaGuard2PctileWrongTable:
+    def test_unqualified_pctile_col_from_screener_raises_error(self, risk_agent):
+        sql = (
+            "SELECT ticker, volatility_pctile_in_sector "
+            "FROM main_equity.mart_equity_screener"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert any("mart_risk_profile" in e for e in errors)
+
+    def test_sharpe_pctile_col_from_screener_raises_error(self, risk_agent):
+        sql = (
+            "SELECT ticker, sharpe_pctile_in_sector "
+            "FROM main_equity.mart_equity_screener"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert any("mart_risk_profile" in e for e in errors)
+
+    def test_qualified_pctile_on_screener_alias_raises_error(self, risk_agent):
+        sql = (
+            "SELECT s.ticker, s.volatility_pctile_in_sector "
+            "FROM main_equity.mart_equity_screener AS s"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert any("mart_risk_profile" in e for e in errors)
+
+    def test_pctile_from_risk_profile_no_error(self, risk_agent):
+        sql = (
+            "SELECT ticker, volatility_pctile_in_sector "
+            "FROM main_risk.mart_risk_profile"
+        )
+        errors = risk_agent._validate_schema(sql)
+        assert not any("mart_risk_profile" in e for e in errors)
+
+    def test_no_false_positive_without_screener_table(self, risk_agent):
+        # A pctile column referenced on mart_risk_profile (correct table) should
+        # not trigger Guard 2 even though screener is in the schema context.
+        sql = (
+            "SELECT ticker, volatility_pctile_in_sector "
+            "FROM main_risk.mart_risk_profile"
+        )
+        errors = risk_agent._validate_schema(sql)
+        # Guard 2 error specifically mentions "Percentile-within-sector columns".
+        assert not any("Percentile-within-sector" in e for e in errors)
+
+
+# ── Guard 3: classify_domains sector-name expansion ───────────────────────────
+
+
+class TestClassifyDomainsSectorNameExpansion:
+    def test_sector_name_expands_to_sector_domain(self, agent):
+        # "healthcare" is in _SECTOR_NAME_KEYWORDS; "performance" triggers equity.
+        # sector domain should be added even though no short sector keyword matched.
+        domains = agent.classify_domains("Healthcare sector performance this year")
+        assert "sector" in domains
+        assert "equity" in domains
+
+    def test_technology_triggers_sector_expansion(self, agent):
+        # "sharpe" → risk; "technology" should add sector via expansion.
+        domains = agent.classify_domains("What is the average Sharpe ratio in Technology?")
+        assert "risk" in domains
+        assert "sector" in domains
+
+    def test_financials_triggers_sector_expansion(self, agent):
+        # "drawdown" → risk; "financials" contains "financial" substring → sector.
+        domains = agent.classify_domains("Show drawdown for Financials stocks")
+        assert "risk" in domains
+        assert "sector" in domains
+
+    def test_no_expansion_without_financial_keywords(self, agent):
+        # "technology" alone (no financial keyword) → return None, not ["core", "sector"].
+        domains = agent.classify_domains("technology data")
+        assert domains is None
+
+    def test_expansion_does_not_duplicate_sector(self, agent):
+        # "sector" keyword already fires sector domain; guard should not add a duplicate.
+        domains = agent.classify_domains("sector volatility in Technology")
+        assert domains.count("sector") == 1
+
+    def test_core_always_first_after_expansion(self, agent):
+        domains = agent.classify_domains("Healthcare stock returns")
+        assert domains[0] == "core"
