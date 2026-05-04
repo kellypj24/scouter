@@ -25,13 +25,11 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 2**: `src/agent/narrative_agent.py` (LLM prose + chart inference), `src/viz/charts.py` (Plotly builders), `src/models/response.py` (NarrativeBlock), 15/15 eval fixtures passing
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
-- **Phase 5 (partial)**: Answer quality hardening (20 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2
+- **Phase 5 (partial)**: Answer quality hardening (28 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2; contextual knowledge base (dbt docs sensor, few-shot injection via `learned_patterns.yaml`); Docker Compose phase 2 (Ollama + Dagster webserver/daemon services); schema-level SQL guards (Guards 1-3 in `query_agent._validate_schema`) cutting first-attempt failures for sector snapshot misuse, pctile hallucination, and avg_drawdown on risk mart — 27/28 eval fixtures passing, 290 unit tests, 82% coverage
 
 ### What's next (Phase 5 remaining)
-- Docker Compose phase 2: add Ollama service + Dagster (webserver + daemon as separate services — NOT `dagster dev`)
 - Answer quality round 2 (use observability `mart_fallback_analysis` to identify highest-impact targets):
-  - Multi-stock time-series: `mart_equity_performance` CTE pattern is fragile for 3+ stocks over 6+ months
-  - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 20 fixtures)
+  - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 28 fixtures)
   - Chart quality scoring: Go scorer validates chart presence but not `x_col`/`y_col` sensibility
   - News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
 
@@ -200,6 +198,9 @@ scripts/
 - **Containers**: Docker Compose (app + Ollama + Dagster)
 - **Testing**: pytest >= 80% coverage
 - **Linting**: ruff check + ruff format + mypy
+
+### Before every commit
+Run `just lint && just test` before committing or pushing. CI is a backstop — catching failures there means a wasted round-trip. Never push a separate "fix lint" commit; fold fixes into the original commit before the first push.
 
 ### Eval commands
 | Command | What it does |

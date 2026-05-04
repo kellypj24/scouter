@@ -77,7 +77,7 @@ fixtures:
   - id: multistock_top5_trend
     question: "Show me how today's top 5 companies have trended the last 3 months"
     expect:
-      min_rows: 50
+      min_rows: 200
       max_blocks: 1
       fallback: false
       chart_type: line
@@ -194,6 +194,22 @@ fixtures:
       chart_type: line
       sql_table: mart_sector_rotation
 
+  # ── Sector snapshot — Guard 1 regression (no time dimension) ─────────────
+  # mart_sector_fundamentals is a current snapshot; the LLM occasionally adds
+  # date/year filters on first attempt. Guard 1 catches this and forces a clean
+  # snapshot query on retry.  ticker_count and avg_market_cap are unique to this
+  # table so the model routes there reliably (unlike Sharpe/volatility which map to
+  # mart_risk_profile too).  sector_ytd_performance also exercises Guard 1 directly.
+
+  - id: sector_fundamentals_snapshot
+    question: "Rank each market sector by total market capitalization"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_sector_fundamentals
+
   # ── Drawdown — additional coverage ───────────────────────────────────────
 
   - id: drawdown_by_sector
@@ -201,9 +217,9 @@ fixtures:
     expect:
       min_rows: 5
       max_blocks: 1
-      # fallback intentionally not asserted — GROUP BY aggregation is hard for smaller models;
-      # this fixture validates coverage of the question type, not strict SQL correctness
+      fallback: false
       chart_type: bar
+      sql_table: mart_sector_fundamentals
 
   - id: drawdown_tech_screen
     question: "Show me the 10 stocks with the worst drawdown from their 52-week high in the Financials sector"
