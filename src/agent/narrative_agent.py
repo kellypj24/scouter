@@ -34,6 +34,11 @@ _MAX_SAMPLE_COLS = 8
 
 # Known date and categorical column names for chart inference.
 _DATE_COLS = frozenset({"date", "price_date", "trade_date", "period_date", "as_of_date"})
+# Strong: unambiguous scatter intent — upgrades bar → scatter.
+_SCATTER_KEYWORDS_STRONG = frozenset({"plot ", "scatter plot", "correlation", "scatter"})
+# Weak: comparative language — only upgrades when chart_type is None (result has
+# no categorical/date cols), so "month versus year to date" stays a bar chart.
+_SCATTER_KEYWORDS_WEAK = frozenset({"versus", " vs ", " vs.", "against", "relationship between"})
 _CAT_COLS = frozenset(
     {"ticker", "company_name", "sector", "industry", "gics_sector", "gics_sub_industry"}
 )
@@ -248,6 +253,7 @@ class NarrativeAgent:
                 preferred_y=preferred_y,
                 preferred_color=preferred_color,
                 title=response.title,
+                question=question,
             )
 
         return NarrativeBlock(
@@ -307,6 +313,7 @@ def _infer_chart_spec(
     preferred_y: str | None,
     preferred_color: str | None,
     title: str,
+    question: str = "",
 ) -> ChartSpec | None:
     """Build a ChartSpec, using LLM suggestions where valid and inferring the rest.
 
@@ -342,6 +349,19 @@ def _infer_chart_spec(
     chart_type = preferred_type if preferred_type in _VALID_CHART_TYPES else None
     if chart_type is None:
         chart_type = "line" if date_cols else ("bar" if cat_cols else None)
+
+    # Upgrade to scatter based on question language. Must run before the None guard
+    # below — the None case occurs when the result has only numeric columns.
+    # Strong keywords (e.g. "plot", "correlation") upgrade bar → scatter.
+    # Weak keywords (e.g. "versus") only upgrade when there are no categorical columns
+    # (chart_type is None), so "month versus year to date" stays a bar chart.
+    if question and len(numeric_cols) >= 2:
+        q_lower = question.lower()
+        if chart_type in ("bar", None) and any(kw in q_lower for kw in _SCATTER_KEYWORDS_STRONG):
+            chart_type = "scatter"
+        elif chart_type is None and any(kw in q_lower for kw in _SCATTER_KEYWORDS_WEAK):
+            chart_type = "scatter"
+
     if chart_type is None:
         return None
 
@@ -350,6 +370,9 @@ def _infer_chart_spec(
     if x_col is None:
         if chart_type == "line":
             x_col = date_cols[0] if date_cols else None
+        elif chart_type == "scatter":
+            # Scatter: prefer a numeric axis; first numeric column.
+            x_col = numeric_cols[0] if numeric_cols else None
         else:
             # Prefer named categorical columns; fall back to first non-numeric column.
             x_col = (
@@ -363,7 +386,7 @@ def _infer_chart_spec(
     y_col = preferred_y
     if y_col is None:
         for candidate in _PREFERRED_Y:
-            if candidate in numeric_cols:
+            if candidate in numeric_cols and candidate != x_col:
                 y_col = candidate
                 break
         if y_col is None:
@@ -375,17 +398,33 @@ def _infer_chart_spec(
 
     # Determine color_col.
     color_col = preferred_color
-    if color_col is None and chart_type == "line" and "ticker" in col_set:
-        try:
-            if data["ticker"].nunique() > 1:
-                color_col = "ticker"
-        except Exception:
-            pass
+    if color_col is None and chart_type == "line":
+        if "ticker" in col_set:
+            try:
+                if data["ticker"].nunique() > 1:
+                    color_col = "ticker"
+            except Exception:
+                pass
+        if color_col is None and "sector" in col_set:
+            try:
+                if data["sector"].nunique() > 1:
+                    color_col = "sector"
+            except Exception:
+                pass
     elif color_col is None and chart_type == "bar":
         if "sector" in col_set and x_col != "sector":
             color_col = "sector"
         elif "industry" in col_set and x_col != "industry":
             color_col = "industry"
+    elif color_col is None and chart_type == "scatter":
+        if "sector" in col_set:
+            color_col = "sector"
+        elif "ticker" in col_set:
+            try:
+                if data["ticker"].nunique() > 1:
+                    color_col = "ticker"
+            except Exception:
+                pass
 
     return ChartSpec(
         chart_type=chart_type,
@@ -470,6 +509,7 @@ def _fallback_block(
         preferred_y=None,
         preferred_color=None,
         title="",
+        question=question,
     )
 
     return NarrativeBlock(

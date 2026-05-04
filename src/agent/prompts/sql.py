@@ -93,6 +93,18 @@ RISK — use the right table for the right metric:
     sharpe_pctile_in_sector, risk_score. These columns do NOT exist in
     mart_equity_screener — do not look for them there.
 
+SCATTER / CORRELATION queries ("plot X vs Y", "versus", "relationship between", "correlation"):
+  → Use main_equity.mart_equity_screener for snapshot metrics (sharpe_20d, volatility_20d,
+    ytd_return, drawdown_from_52w_high, market_cap).
+  → ALWAYS include ticker, company_name, and sector in SELECT — they are needed for chart coloring.
+  → Do NOT add a WHERE clause — mart_equity_screener is already the full S&P 500 (~500 rows).
+    Never filter by sector, market_cap_tier, or any other column unless the question asks for it.
+  → Do NOT add LIMIT — scatter plots need all points to be meaningful.
+  → Example — Sharpe ratio vs volatility for all stocks:
+      SELECT ticker, company_name, sector, sharpe_20d, volatility_20d
+      FROM main_equity.mart_equity_screener
+      ORDER BY sharpe_20d DESC
+
 NEVER query: fct_daily_prices, dim_company, dim_date, or main_intermediate.* tables.
 NEVER query mart_equity_performance without a WHERE clause on date or ticker — it returns 600k+ rows.
 NEVER substitute a price/return metric for a fundamental accounting metric. If asked for

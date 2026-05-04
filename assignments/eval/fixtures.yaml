@@ -287,6 +287,163 @@ fixtures:
       sql_table: mart_sector_rotation
       context_required: true
 
+  # ── Drawdown — additional coverage ───────────────────────────────────────
+
+  - id: drawdown_longest_streak
+    question: "Which 10 stocks have spent the most consecutive days in a drawdown?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_drawdown
+
+  - id: drawdown_sector_avg
+    question: "What is the average drawdown from 52-week highs for each sector?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      # sql_table not asserted — mart_sector_fundamentals and mart_risk_profile both
+      # have drawdown_from_52w_high; grouping by sector on either is a valid answer
+
+  - id: drawdown_deep_screen
+    question: "Show me all stocks currently down more than 20% from their 52-week high"
+    expect:
+      min_rows: 1
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      # sql_table not asserted — mart_equity_screener and mart_risk_profile both have
+      # drawdown_from_52w_high; either is a valid choice for a snapshot filter
+
+  # ── Moving averages — additional coverage ────────────────────────────────
+
+  - id: moving_avg_50_200
+    question: "Compare Apple's 50-day and 200-day moving averages over the last year"
+    expect:
+      min_rows: 50
+      max_blocks: 2
+      fallback: false
+      chart_type: line
+      sql_table: mart_equity_performance
+      sql_not_contains: "moving_average"
+
+  - id: moving_avg_multi_stock
+    question: "Show the 20-day moving average for Microsoft and Tesla over the last 3 months"
+    expect:
+      min_rows: 30
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+      sql_not_contains: "moving_average"
+
+  - id: moving_avg_crossover_screen
+    question: "Which stocks currently have their 20-day moving average above their 50-day moving average?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      sql_table: mart_equity_performance
+      sql_not_contains: "moving_average"
+      # chart_type not asserted — screener result; bar is likely but not required
+
+  # ── Sector rotation — daily vs monthly distinction ────────────────────────
+
+  - id: sector_daily_leaders
+    question: "Which sectors had the highest daily return over the last 5 trading days?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_sector_rotation
+
+  - id: sector_monthly_vs_ytd
+    question: "Compare each sector's return this month versus year to date"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      # sql_table not asserted — mart_sector_fundamentals (avg_mtd_return_ew, avg_ytd_return_ew)
+      # and mart_sector_rotation (sector_ytd_return, month filter) are both valid answers
+
+  # ── Multi-entity time-series — additional coverage ────────────────────────
+
+  - id: multistock_three_tech_giants
+    question: "Compare Apple, Microsoft, and Google stock price performance year to date"
+    expect:
+      min_rows: 100
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
+  - id: multistock_sector_champions
+    question: "Compare the year-to-date price performance of Nvidia and JPMorgan"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_equity_performance
+
+  - id: sector_cumulative_return_trend
+    question: "Show how cumulative sector returns have evolved over the last 3 months"
+    expect:
+      min_rows: 50
+      max_blocks: 1
+      fallback: false
+      chart_type: line
+      color_col_required: true
+      sql_table: mart_sector_rotation
+
+  # ── Risk — Sharpe vs volatility scatter ──────────────────────────────────
+
+  - id: risk_scatter_all_stocks
+    question: "Plot Sharpe ratio versus volatility for all S&P 500 stocks"
+    expect:
+      min_rows: 100
+      max_blocks: 1
+      fallback: false
+      chart_type: scatter
+      sql_table: mart_equity_screener
+
+  - id: risk_low_vol_high_sharpe
+    question: "Show Sharpe ratio versus volatility for all stocks — where are the risk/return sweet spots?"
+    expect:
+      min_rows: 100
+      max_blocks: 1
+      fallback: false
+      chart_type: scatter
+      sql_table: mart_equity_screener
+
+  # ── Screener — combined filters ───────────────────────────────────────────
+
+  - id: screener_energy_sector_top
+    question: "What are the top performing Energy stocks by YTD return?"
+    expect:
+      min_rows: 5
+      max_blocks: 1
+      fallback: false
+      chart_type: bar
+      sql_table: mart_equity_screener
+
+  - id: screener_large_cap_low_drawdown
+    question: "Show large-cap stocks with a Sharpe ratio above 1 and less than 15% drawdown from their 52-week high"
+    expect:
+      min_rows: 1
+      max_blocks: 2
+      fallback: false
+      chart_type: bar
+      sql_table: mart_equity_screener
+
   # ── Unanswerable (metric not in schema) ──────────────────────────────────
 
   - id: unanswerable_revenue
@@ -298,6 +455,20 @@ fixtures:
 
   - id: unanswerable_eps
     question: "What is Nvidia's earnings per share?"
+    expect:
+      min_rows: 0
+      max_blocks: 2
+      unanswerable: true
+
+  - id: unanswerable_dividend
+    question: "What is Microsoft's dividend yield?"
+    expect:
+      min_rows: 0
+      max_blocks: 2
+      unanswerable: true
+
+  - id: unanswerable_pe_ratio
+    question: "What is Apple's price-to-earnings ratio?"
     expect:
       min_rows: 0
       max_blocks: 2

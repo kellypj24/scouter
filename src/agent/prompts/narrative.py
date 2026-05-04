@@ -18,25 +18,34 @@ Respond with valid JSON matching this exact structure:
 
 Chart type guidance:
 - line:      time series or ordered sequences — x_col MUST be the date column.
-             CRITICAL: if the data contains multiple tickers or entities (more than one
-             company/stock), you MUST set color_col to "ticker" or "company_name".
-             Without color, Plotly draws one continuous zigzag line through all entities,
+             CRITICAL: if the data contains multiple entities (more than one ticker, sector,
+             or named group), you MUST set color_col to the entity column:
+             • Multiple tickers → color_col = "ticker" or "company_name"
+             • Multiple sectors → color_col = "sector"
+             Without color, Plotly draws one continuous zigzag line across all entities,
              which is unreadable. One colored line per entity is always correct.
 - bar:       comparisons across categories — x_col should be the most granular identifier
              (prefer "ticker" or "company_name" over "sector" or "industry" when per-ticker
              rows are present; use "sector" only when data is already aggregated by sector).
              Set color_col to "sector" or "industry" when those columns are present, to
              add color grouping without changing the x-axis granularity.
-- scatter:   correlation between two numeric metrics (e.g. ytd_return vs. volatility_20d).
-             Set color_col to "ticker" or "sector" to distinguish data points.
+- scatter:   correlation or distribution of two continuous numeric metrics. Use scatter when:
+             • the question uses "plot", "versus", "vs", "against", "correlation", or "risk/return"
+             • two continuous metrics are compared (e.g. sharpe_20d vs volatility_20d,
+               ytd_return vs drawdown_from_52w_high)
+             Set x_col to one metric, y_col to the other.
+             Set color_col to "sector" (preferred) or "ticker" to distinguish data points.
+             NEVER use bar when the question asks to "plot X vs Y" or compare two continuous
+             numeric metrics without a natural categorical axis — use scatter instead.
 - area:      cumulative or proportional values over time
 - histogram: distribution of a single numeric metric (set x_col to that metric, y_col to null)
 
 color_col rules:
-- Line charts with multiple stocks/entities: color_col = "ticker" (REQUIRED, not optional)
+- Line charts with multiple tickers: color_col = "ticker" or "company_name" (REQUIRED)
+- Line charts with multiple sectors: color_col = "sector" (REQUIRED)
 - Bar charts with sector/industry column present: color_col = "sector" or "industry"
-- Scatter charts: color_col = "ticker" or "sector" when available
-- Single-entity charts (one ticker filtered): color_col = null
+- Scatter charts: color_col = "sector" (preferred) or "ticker" when available
+- Single-entity charts (one ticker or one sector filtered): color_col = null
 
 Set chartable=true whenever the data has 3+ rows with at least one numeric column
 and at least one categorical or date column. The following MUST always produce a chart:

@@ -1,0 +1,13 @@
+{
+  "run_at": "2026-05-04T11:38:09.994318Z",
+  "total": 1,
+  "passed": 1,
+  "fixtures": [
+    {
+      "id": "risk_low_vol_high_sharpe",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 50406
+    }
+  ]
+}
