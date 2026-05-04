@@ -391,9 +391,8 @@ class QueryAgent:
         # Only expand when the question already matched at least one domain — avoids
         # turning "Technology data" (no financial keywords) into a sector-only query
         # when None (all schemas) is already the right answer.
-        if matched and "sector" not in matched:
-            if any(name in q for name in _SECTOR_NAME_KEYWORDS):
-                matched = list(dict.fromkeys(matched + ["sector"]))
+        if matched and "sector" not in matched and any(name in q for name in _SECTOR_NAME_KEYWORDS):
+            matched = list(dict.fromkeys(matched + ["sector"]))
 
         return matched or None
 
