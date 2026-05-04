@@ -595,13 +595,26 @@ class QueryAgent:
 
         errors: list[str] = []
 
-        # Check fully-qualified tables exist.
+        # Check table references exist in the known schema.
+        known_table_names: set[str] = {t for _, t in self._column_lookup}
         seen: set[tuple[str, str]] = set()
         for db, name in alias_to_table.values():
             key = (db, name)
-            if db and key not in seen and key not in self._column_lookup:
-                errors.append(f"Table '{db}.{name}' not found in schema.")
+            if key in seen:
+                continue
             seen.add(key)
+            if db:
+                # Fully-qualified (schema.table): must match an exact key.
+                if key not in self._column_lookup:
+                    errors.append(f"Table '{db}.{name}' not found in schema.")
+            elif name not in known_table_names:
+                # Unqualified and unknown — almost certainly hallucinated. Give a
+                # clear error so the retry can use the correct qualified table name.
+                errors.append(
+                    f"Table '{name}' does not exist. Always use fully-qualified table names "
+                    f"from the schema (e.g. main_sector.mart_sector_rotation, "
+                    f"main_equity.mart_equity_screener). Never invent table names."
+                )
 
         # Check column references.
         for col in statement.find_all(exp.Column):

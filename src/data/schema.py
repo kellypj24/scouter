@@ -269,8 +269,13 @@ def get_schema_prompt(
 
     ctx = load_schema_context(conn)
     schema_str = ctx.to_prompt(domains=domains)
-    dominant = domains[0] if domains and len(domains) == 1 else None
-    few_shot = get_few_shot_examples(dominant)
+    # Use the first non-"core" domain for few-shot selection. "core" is always
+    # present but has no patterns; injecting all patterns for None domains bloats
+    # multi-domain prompts past the 4096-token budget. Cap at 1 example for
+    # 3+ domain combos whose schemas are already large.
+    primary = next((d for d in (domains or []) if d != "core"), None) or "all"
+    max_ex = 1 if domains and len([d for d in domains if d != "core"]) >= 2 else 5
+    few_shot = get_few_shot_examples(primary, max_examples=max_ex)
     if few_shot:
         return f"{schema_str}\n\n{few_shot}"
     return schema_str
