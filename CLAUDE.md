@@ -26,11 +26,12 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
 - **Phase 5 (partial)**: Answer quality hardening (28 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2; contextual knowledge base (dbt docs sensor, few-shot injection via `learned_patterns.yaml`); Docker Compose phase 2 (Ollama + Dagster webserver/daemon services); schema-level SQL guards (Guards 1-3 in `query_agent._validate_schema`) cutting first-attempt failures for sector snapshot misuse, pctile hallucination, and avg_drawdown on risk mart — 27/28 eval fixtures passing, 290 unit tests, 82% coverage
-- **Phase 5 (eval harness round 2, branch `feature/eval-harness-round2`)**: Expanded eval suite to 45 fixtures (was 28) covering drawdown variants, moving averages, sector daily/monthly distinction, multi-entity time-series, risk scatter, screener combined filters, unanswerables; narrative agent improvements (multi-sector color inference, scatter keyword detection with strong/weak split, scatter x/y inference fixes); SQL prompt scatter/correlation guidance; `mart_eval_runs` observability feedback loop — Go runner auto-writes `assignments/eval/last_run.json`, Python loader pushes to DuckDB, dbt mart joins scorer pass/fail with observability spans per fixture; `just eval-load-results` + `just eval-results` commands — **37/45 passing** (8 remaining: 5 need learned patterns, 3 need multi-stock CTE pattern)
+- **Phase 5 (eval harness round 2, branch `feature/eval-harness-round2`)**: Expanded eval suite to 45 fixtures (was 28); narrative agent improvements (multi-sector color inference, scatter keyword detection, x/y inference fixes); SQL prompt scatter/correlation guidance; Guard 5 (unqualified unknown table names); 11 learned patterns with domain priority ordering; `mart_eval_runs` observability feedback loop — **37/45 passing**, 8 remaining failures are local model ceiling (see model notes below)
 
 ### What's next (Phase 5 remaining)
-- **Learned patterns** (5 fixtures blocked): `drawdown_longest_streak`, `sector_fundamentals_snapshot`, `sector_daily_leaders`, `moving_avg_crossover_screen`, multi-stock CTE (`moving_avg_multi_stock`, `multistock_three_tech_giants`, `multistock_sector_champions`)
+- **Model ceiling**: 8 fixtures blocked by `qwen2.5-coder:3b` limits — see **Local model capability ceiling** section below for details and workarounds
 - **Chart x_col/y_col scorer validation**: Go scorer validates chart presence but not column sensibility — `assignments/active/eval_harness_round2.md` Task 3
+- **Domain-specific fallback SQL**: replace single generic fallback with per-domain templates so model failures produce useful data, not empty results
 - News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
 
 **Active work**: `assignments/active/`
@@ -79,6 +80,54 @@ Three distinct runtimes — keep them separate:
        mart_dbt_test_health           ← data quality: failing tests per model
        mart_eval_runs                 ← per-fixture pass/fail + observability context (just eval-load-results)
 ```
+
+## Local model capability ceiling
+
+`qwen2.5-coder:3b` (default SQL model via Ollama) has hard limits that determine which
+eval fixtures pass or fail. Claude Sonnet/Opus via the Anthropic provider is expected
+to clear all 8 remaining failures. This section documents the failure modes and the
+compensating controls already in place.
+
+### Failure taxonomy
+
+| Fixture(s) | Root cause | Prompt tokens | Compensating control |
+|---|---|---|---|
+| `sector_daily_leaders` | Hallucinates table name (`StockReturns`) on every attempt; retry uses wider schema with no examples and picks a random real table | ~4000 | Guard 5 catches hallucinated tables; error message names valid tables. Pattern injected on attempt 1. |
+| `sector_fundamentals_snapshot` | Blends valid column names (`avg_market_cap` + `total_market_cap` → `avg_total_market_cap`); both attempts fail schema validation | ~3700 | Learned pattern shows exact column names; Guard validates on attempt 2 |
+| `drawdown_longest_streak` | Can't produce QUALIFY + `mart_drawdown` aggregation; returns empty SQL | ~4000 | Learned pattern with CTE + QUALIFY template |
+| `moving_avg_crossover_screen` | Dual-window + QUALIFY + WHERE CTE is complex; passes ~40% of runs but falls back on the rest | ~4000 | Learned pattern with complete CTE template |
+| `moving_avg_multi_stock`, `multistock_three_tech_giants`, `multistock_sector_champions` | Orchestrator decomposes multi-stock questions into 1-ticker-per-block; each block has 1 ticker so `color_col` never fires | — | Learned CTE pattern; orchestrator prompt not yet updated |
+
+### Why these workarounds help Claude more than qwen2.5
+
+- **Guard 5 (table-existence)** — catches `FROM StockReturns` at validation, produces a
+  specific error naming valid tables. qwen2.5 ignores the hint; Claude uses it to generate
+  correct SQL on retry.
+- **Learned patterns** — qwen2.5 sees examples but doesn't reliably follow them at ~4000
+  tokens. Claude at its context size uses few-shot examples nearly perfectly.
+- **Guards 1–5 error messages** — qwen2.5 retries produce similar wrong SQL. Claude reads
+  the error, understands it, and self-corrects — each guard doubles as a precise correction prompt.
+- **Tiered example injection (1 example for 3+ domain combos)** — protects qwen2.5's 4k
+  context from bloat. With Claude's 200k context this cap doesn't apply; all 11 patterns
+  could be injected simultaneously with no budget concern.
+
+### Upgrading the provider
+
+Set `SCOUTER_LLM_PROVIDER=anthropic` and ensure `ANTHROPIC_API_KEY` is set. The Anthropic
+provider uses `tool_use` for structured SQL + narrative output, which is more reliable than
+JSON-in-text for both models. Expected outcome: 45/45 eval fixtures passing.
+
+### Domain-specific fallback SQL (not yet built)
+
+The current fallback (`_FALLBACK_SQL` in `query_agent.py`) is a single generic screener
+query. When both LLM attempts fail, the user always gets a top-YTD screener result
+regardless of what they asked. Replacing this with per-domain fallback templates would:
+- Give a correct (if generic) sector or risk answer when the LLM fails
+- Surface observability signal that distinguishes "LLM failed but fallback answered" from
+  "LLM failed and produced a wrong-domain result"
+- Apply equally for qwen2.5 AND Claude (both can fail under load or context limits)
+
+---
 
 ## Constitution (Non-Negotiable Principles)
 

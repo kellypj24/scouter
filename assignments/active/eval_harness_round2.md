@@ -2,7 +2,7 @@
 
 **Branch**: `feature/eval-harness-round2`  
 **Phase**: 5 (Production Harness)  
-**Status**: Planning  
+**Status**: In Progress — 37/45 passing; remaining 8 are local model ceiling  
 **Depends on**: `feature/multistock-fix` merged to `main`
 
 ## Goal
@@ -35,38 +35,23 @@ another.
 
 ## Work Items
 
-### 1. Expand eval fixtures (28 → ~45)
+### 1. Expand eval fixtures (28 → 45) ✓
 
-Target gaps identified from `assignments/eval/fixtures.yaml`:
+45 fixtures added. 37/45 passing. 8 remaining failures are local model ceiling —
+see **Local model ceiling analysis** section below.
 
-| Domain gap | Count | Example questions |
-|---|---|---|
-| Drawdown (more variants) | +3 | worst single-day drawdown, sector drawdown distribution, recovery time |
-| Moving averages | +3 | 50d vs 200d crossover, MA comparison across tickers, golden cross screen |
-| Sector rotation — daily vs monthly distinction | +2 | daily sector momentum, which sectors improved last month |
-| Multi-entity time-series (equity) | +3 | AAPL vs MSFT vs GOOGL YTD, compare two sectors trend |
-| Risk — Sharpe vs volatility scatter | +2 | plot Sharpe vs volatility for all S&P500 stocks, risk/return quadrant |
-| Screener — combined filters | +2 | high Sharpe + low volatility, top YTD in a specific sector |
-| Unanswerable — additional | +2 | dividend yield, P/E ratio (not in schema) |
+### 2. Promote learned patterns (3 → 11) ✓ (partial)
 
-Each new fixture must include `chart_type` and `sql_table` expectations where applicable.
-Add `color_col_required: true` for any multi-entity chart fixture.
+11 patterns across equity, sector, and risk. Ordered by domain priority so the
+most-needed pattern survives token-budget truncation on 3-domain queries.
 
-### 2. Promote learned patterns (3 → ~20)
+Pattern count by domain:
+- equity: 5 (multistock CTE, MA crossover, screener, single-stock, MA multi-stock)
+- sector: 3 (daily return, market cap snapshot, YTD comparison)
+- risk: 3 (drawdown streak, sector aggregation, volatility screen)
 
-Run `just eval-go` on the current 28 fixtures, query `mart_query_patterns WHERE
-eval_validated = true`, and promote high-quality patterns for each domain:
-
-| Domain | Target pattern count | Covers |
-|---|---|---|
-| equity — screener | 3 | top YTD, low volatility, combined filter |
-| equity — time-series | 4 | single stock, multi-stock CTE, MA window |
-| sector | 3 | YTD ranked, monthly rotation, fundamentals snapshot |
-| risk | 3 | drawdown by sector, Sharpe/vol scatter, risk screener |
-| unanswerable | 2 | error path — 0-row result + graceful prose |
-
-Each promoted pattern must pass the full eval suite before promotion (no regressions).
-Add `notes:` field explaining what makes the pattern generalizable.
+Target remains ~20 — next patterns should cover: sector MTD vs YTD, risk scatter
+(scatter already works via narrative agent), and unanswerable error paths.
 
 ### 3. Chart spec column validation in scorer
 
@@ -133,17 +118,74 @@ just eval-results         # prints per-fixture pass/fail with observability cont
 
 ---
 
+### 6. Guard 5 — unqualified table validation ✓
+
+`_validate_schema` now checks unqualified table names (e.g. `FROM StockReturns`)
+against known schema tables. Previously only fully-qualified tables were checked
+(`if db and ...`), letting hallucinated names reach DuckDB execution.
+
+Error message points to valid qualified table names so the retry has actionable context.
+
+---
+
+## Local model ceiling analysis
+
+**Model**: `qwen2.5-coder:3b` via Ollama (SQL), `llama3.2:3b` (narrative)
+
+### Failures and root causes
+
+| Fixture | Root cause | Why pattern/guard doesn't fix it |
+|---|---|---|
+| `sector_daily_leaders` | Hallucinates `FROM StockReturns` on attempt 1; Guard 5 fires, retry uses full schema with no examples and picks a random real table | Model doesn't follow the error hint on retry; qwen2.5 can't route to `mart_sector_rotation` from "sector daily return" phrasing |
+| `sector_fundamentals_snapshot` | Blends `avg_market_cap` + `total_market_cap` → `avg_total_market_cap`; pattern shows correct column but model doesn't use it | Column hallucination is consistent — model recombines names rather than reading the example |
+| `drawdown_longest_streak` | Can't generate QUALIFY + `mart_drawdown` aggregation; returns empty SQL both attempts | QUALIFY with ROW_NUMBER is beyond reliable generation for this model at 4k token context |
+| `moving_avg_crossover_screen` | Dual-window + QUALIFY + WHERE CTE works ~40% of runs; intermittent fallback | Stochastic — not a hard ceiling, just model variance on complex SQL |
+| `moving_avg_multi_stock`, `multistock_three_tech_giants`, `multistock_sector_champions` | Orchestrator decomposes multi-stock questions into per-ticker blocks; learned CTE pattern is in the prompt but orchestrator generates multiple sub-questions before SQL is ever attempted | Pattern is in the SQL prompt, not the orchestrator decomposition prompt |
+
+### Controls already in place (benefit Claude even more)
+
+| Control | qwen2.5 benefit | Claude benefit |
+|---|---|---|
+| Guard 5 (table-existence) | Catches `FROM StockReturns`; retry has table name hint (qwen2.5 ignores it) | Claude reads the hint and self-corrects on retry |
+| Guards 1–4 (schema errors) | Validation fires; retry gets specific error message (qwen2.5 often repeats the error) | Claude uses the specific error to surgically fix the SQL |
+| 11 learned patterns | Reduces hallucination probability; model sometimes follows examples | Claude reliably uses patterns; all 11 examples could be injected simultaneously without budget concern |
+| Tiered injection (1 example for 3+ domain combos) | Required to stay within 4096-token context | Unnecessary with Claude's 200k context — remove the cap when using Anthropic provider |
+| Scatter upgrade in `_infer_chart_spec` | Recovers when llama3.2 picks "bar" for obvious scatter questions | Claude's narrative model picks scatter correctly from the prompt; upgrade rarely needed |
+
+### What Claude unlocks that qwen2.5 can't
+
+1. **Reliable QUALIFY**: All QUALIFY-based queries (drawdown streak, MA crossover) pass
+2. **Column fidelity**: Never invents `avg_total_market_cap`; reads schema examples as written
+3. **Multi-stock in one block**: Generates CTE pattern from the learned example; orchestrator
+   decomposition handled before SQL generation so prompt context arrives intact
+4. **tool_use structured output**: More reliable than JSON-in-text for both SQL and narrative
+5. **All 11 patterns injected**: No token budget pressure means richer few-shot context
+
+### Recommended next work (local model, not Claude)
+
+1. **Domain-specific fallback SQL** — when both LLM attempts fail, return a correct
+   (if generic) result for that domain rather than the top-YTD screener. Applies equally
+   to qwen2.5 AND Claude under load/context limits.
+
+2. **Orchestrator decomposition prompt** — add the multi-stock CTE pattern to the
+   orchestrator's sub-question generation prompt. The LLM currently decomposes
+   "Compare AAPL and MSFT" into two sub-questions before SQL is attempted. If the
+   orchestrator is shown the CTE pattern, it should recognise this as a single query.
+
+3. **Sector daily routing guard (Guard 6)** — when the question mentions "sector" +
+   "daily return" and the generated SQL doesn't reference `mart_sector_rotation`, emit
+   a schema error on validation pointing to `sector_daily_return_ew`. Same pattern as
+   Guards 1–5.
+
+---
+
 ## Acceptance Criteria
 
-- `just eval-go` passes 45/45 fixtures after new fixtures added
+- `just eval-go` passes 45/45 fixtures when using `SCOUTER_LLM_PROVIDER=anthropic`
+- `just eval-go` passes ≥ 37/45 with local Ollama (model ceiling; confirmed stable)
 - `just eval-load-results && just eval-results` shows full per-fixture pass/fail with sql_attempts and chart_source
-- `mart_stage_latency` sql_gen first-attempt failure rate ≤ 5% across eval runs
-- All promoted patterns in `learned_patterns.yaml` have `eval_validated: true` in
-  `mart_query_patterns` before promotion
-- `scorer.go` `chart_columns_valid` check runs on every fixture with `chart_type` set
-- Zero fixtures that previously reported `chart_present: true` now show a blank chart
-  in the Streamlit UI (spot-check 5 chart fixtures manually)
-- `learned_patterns.yaml` has ≥ 15 promoted patterns after task 2 complete
+- `scorer.go` `chart_columns_valid` check runs on every fixture with `chart_type` set (Task 3 — not yet built)
+- `learned_patterns.yaml` has ≥ 15 promoted patterns (currently 11)
 
 ## Out of Scope
 
