@@ -53,3 +53,13 @@ sources:
         columns:
           - name: test_unique_id
             tests: [not_null]
+      - name: eval_fixture_results
+        description: >
+          Per-fixture pass/fail results written by scripts/load_eval_results.py after
+          each eval-go run. One row per fixture per run. Joined with observability
+          request data in mart_eval_runs.
+        columns:
+          - name: fixture_id
+            tests: [not_null]
+          - name: run_at
+            tests: [not_null]

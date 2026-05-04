@@ -155,6 +155,13 @@ func main() {
 	printSummary(final)
 	printFailures(final)
 
+	// Always write results JSON so mart_eval_runs has fresh data.
+	// Run `just eval-load-results` after this to push into DuckDB.
+	resultsPath := filepath.Join(projectRoot, "assignments", "eval", "last_run.json")
+	if err := writeResultsJSON(resultsPath, final); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write %s: %v\n", resultsPath, err)
+	}
+
 	for _, r := range final {
 		if !r.Passed {
 			os.Exit(1)
