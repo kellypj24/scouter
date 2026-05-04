@@ -11,6 +11,10 @@ def main() -> None:
     root = Path(__file__).parent.parent
     conn = duckdb.connect(str(root / "data" / "scouter.duckdb"), read_only=True)
     df = conn.execute("""
+        WITH latest AS (
+            SELECT MAX(run_at) AS run_at
+            FROM main_observability.mart_eval_runs
+        )
         SELECT
             fixture_id,
             CASE WHEN passed THEN '✓' ELSE '✗' END AS status,
@@ -19,7 +23,8 @@ def main() -> None:
             chart_source,
             failures[1] AS first_failure
         FROM main_observability.mart_eval_runs
-        WHERE run_at = (SELECT MAX(run_at) FROM main_observability.mart_eval_runs)
+        WHERE run_at = (SELECT run_at FROM latest)
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY fixture_id ORDER BY started_at DESC NULLS LAST) = 1
         ORDER BY passed ASC, fixture_id
     """).df()
     conn.close()

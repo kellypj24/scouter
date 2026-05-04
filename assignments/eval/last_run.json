@@ -1,13 +1,16 @@
 {
-  "run_at": "2026-05-04T11:38:09.994318Z",
+  "run_at": "2026-05-04T11:59:13.014422Z",
   "total": 1,
-  "passed": 1,
+  "passed": 0,
   "fixtures": [
     {
-      "id": "risk_low_vol_high_sharpe",
-      "passed": true,
-      "failures": [],
-      "elapsed_ms": 50406
+      "id": "moving_avg_crossover_screen",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 70852
     }
   ]
 }
