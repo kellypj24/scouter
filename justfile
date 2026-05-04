@@ -98,7 +98,7 @@ eval-go-filter substr concurrency="3" timeout="3m":
 # Run after `just eval-go` to make fixture-level results queryable
 eval-load-results:
     uv run python scripts/load_eval_results.py
-    uv run dbt run --project-dir dbt/ --profiles-dir dbt/ --select mart_eval_runs
+    uv run dbt run --project-dir dbt/ --profiles-dir dbt/ --select +mart_eval_runs
 
 # Query mart_eval_runs for the latest run summary (requires eval-load-results first)
 eval-results:
