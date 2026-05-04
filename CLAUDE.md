@@ -199,6 +199,9 @@ scripts/
 - **Testing**: pytest >= 80% coverage
 - **Linting**: ruff check + ruff format + mypy
 
+### Before every commit
+Run `just lint && just test` before committing or pushing. CI is a backstop — catching failures there means a wasted round-trip. Never push a separate "fix lint" commit; fold fixes into the original commit before the first push.
+
 ### Eval commands
 | Command | What it does |
 |---------|-------------|
