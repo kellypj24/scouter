@@ -64,25 +64,27 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
 # GICS sector labels and common synonyms that the LLM uses in questions but don't appear
 # in _DOMAIN_KEYWORDS.  When any of these appear alongside a non-sector domain match we
 # expand the domain list to include "sector" so the mart_sector_* schemas are injected.
-_SECTOR_NAME_KEYWORDS: frozenset[str] = frozenset({
-    "technology",
-    "tech",
-    "healthcare",
-    "health care",
-    "financials",
-    "financial",
-    "energy",
-    "materials",
-    "industrials",
-    "industrial",
-    "utilities",
-    "communication",
-    "consumer discretionary",
-    "consumer staples",
-    "real estate",
-    "pharma",
-    "biotech",
-})
+_SECTOR_NAME_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "technology",
+        "tech",
+        "healthcare",
+        "health care",
+        "financials",
+        "financial",
+        "energy",
+        "materials",
+        "industrials",
+        "industrial",
+        "utilities",
+        "communication",
+        "consumer discretionary",
+        "consumer staples",
+        "real estate",
+        "pharma",
+        "biotech",
+    }
+)
 
 # Patterns that indicate a column is a derived/computed metric rather than a
 # stored column — moving averages, exponential averages, RSI, rolling windows, etc.

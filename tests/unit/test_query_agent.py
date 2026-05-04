@@ -241,9 +241,7 @@ def sector_fund_agent(mock_provider, conn, sector_fund_schema):
 
 @pytest.fixture
 def risk_agent(mock_provider, conn, screener_and_risk_schema):
-    return QueryAgent(
-        provider=mock_provider, conn=conn, schema_context=screener_and_risk_schema
-    )
+    return QueryAgent(provider=mock_provider, conn=conn, schema_context=screener_and_risk_schema)
 
 
 # ── Guard 1: mart_sector_fundamentals — no time dimension ─────────────────────
@@ -298,18 +296,12 @@ class TestValidateSchemaGuard1SectorFundamentals:
 
 class TestValidateSchemaGuard2PctileWrongTable:
     def test_unqualified_pctile_col_from_screener_raises_error(self, risk_agent):
-        sql = (
-            "SELECT ticker, volatility_pctile_in_sector "
-            "FROM main_equity.mart_equity_screener"
-        )
+        sql = "SELECT ticker, volatility_pctile_in_sector FROM main_equity.mart_equity_screener"
         errors = risk_agent._validate_schema(sql)
         assert any("mart_risk_profile" in e for e in errors)
 
     def test_sharpe_pctile_col_from_screener_raises_error(self, risk_agent):
-        sql = (
-            "SELECT ticker, sharpe_pctile_in_sector "
-            "FROM main_equity.mart_equity_screener"
-        )
+        sql = "SELECT ticker, sharpe_pctile_in_sector FROM main_equity.mart_equity_screener"
         errors = risk_agent._validate_schema(sql)
         assert any("mart_risk_profile" in e for e in errors)
 
@@ -322,20 +314,14 @@ class TestValidateSchemaGuard2PctileWrongTable:
         assert any("mart_risk_profile" in e for e in errors)
 
     def test_pctile_from_risk_profile_no_error(self, risk_agent):
-        sql = (
-            "SELECT ticker, volatility_pctile_in_sector "
-            "FROM main_risk.mart_risk_profile"
-        )
+        sql = "SELECT ticker, volatility_pctile_in_sector FROM main_risk.mart_risk_profile"
         errors = risk_agent._validate_schema(sql)
         assert not any("mart_risk_profile" in e for e in errors)
 
     def test_no_false_positive_without_screener_table(self, risk_agent):
         # A pctile column referenced on mart_risk_profile (correct table) should
         # not trigger Guard 2 even though screener is in the schema context.
-        sql = (
-            "SELECT ticker, volatility_pctile_in_sector "
-            "FROM main_risk.mart_risk_profile"
-        )
+        sql = "SELECT ticker, volatility_pctile_in_sector FROM main_risk.mart_risk_profile"
         errors = risk_agent._validate_schema(sql)
         # Guard 2 error specifically mentions "Percentile-within-sector columns".
         assert not any("Percentile-within-sector" in e for e in errors)
@@ -346,11 +332,7 @@ class TestValidateSchemaGuard2PctileWrongTable:
 
 class TestValidateSchemaGuard3AvgDrawdownWrongTable:
     def test_unqualified_avg_drawdown_from_risk_profile_raises_error(self, risk_agent):
-        sql = (
-            "SELECT sector, avg_drawdown "
-            "FROM main_risk.mart_risk_profile "
-            "GROUP BY sector"
-        )
+        sql = "SELECT sector, avg_drawdown FROM main_risk.mart_risk_profile GROUP BY sector"
         errors = risk_agent._validate_schema(sql)
         # Guard message includes the exact correct query as a template.
         assert any("avg_drawdown_from_52w_high" in e for e in errors)
@@ -358,19 +340,12 @@ class TestValidateSchemaGuard3AvgDrawdownWrongTable:
 
     def test_avg_drawdown_variant_name_raises_error(self, risk_agent):
         # avg_drawdown_pct, avg_drawdown_52w — any avg_drawdown_* prefix triggers.
-        sql = (
-            "SELECT sector, avg_drawdown_52w "
-            "FROM main_risk.mart_risk_profile "
-            "GROUP BY sector"
-        )
+        sql = "SELECT sector, avg_drawdown_52w FROM main_risk.mart_risk_profile GROUP BY sector"
         errors = risk_agent._validate_schema(sql)
         assert any("avg_drawdown_from_52w_high" in e for e in errors)
 
     def test_qualified_avg_drawdown_on_risk_alias_raises_error(self, risk_agent):
-        sql = (
-            "SELECT r.sector, r.avg_drawdown "
-            "FROM main_risk.mart_risk_profile AS r"
-        )
+        sql = "SELECT r.sector, r.avg_drawdown FROM main_risk.mart_risk_profile AS r"
         errors = risk_agent._validate_schema(sql)
         assert any("avg_drawdown_from_52w_high" in e for e in errors)
 
