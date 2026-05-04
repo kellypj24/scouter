@@ -26,12 +26,12 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 3**: `src/agent/orchestrator.py` (`run()` + `stream()`), multi-block decomposition, graceful degradation at every layer
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
 - **Phase 5 (partial)**: Answer quality hardening (28 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2; contextual knowledge base (dbt docs sensor, few-shot injection via `learned_patterns.yaml`); Docker Compose phase 2 (Ollama + Dagster webserver/daemon services); schema-level SQL guards (Guards 1-3 in `query_agent._validate_schema`) cutting first-attempt failures for sector snapshot misuse, pctile hallucination, and avg_drawdown on risk mart — 27/28 eval fixtures passing, 290 unit tests, 82% coverage
+- **Phase 5 (eval harness round 2, branch `feature/eval-harness-round2`)**: Expanded eval suite to 45 fixtures (was 28) covering drawdown variants, moving averages, sector daily/monthly distinction, multi-entity time-series, risk scatter, screener combined filters, unanswerables; narrative agent improvements (multi-sector color inference, scatter keyword detection with strong/weak split, scatter x/y inference fixes); SQL prompt scatter/correlation guidance; `mart_eval_runs` observability feedback loop — Go runner auto-writes `assignments/eval/last_run.json`, Python loader pushes to DuckDB, dbt mart joins scorer pass/fail with observability spans per fixture; `just eval-load-results` + `just eval-results` commands — **37/45 passing** (8 remaining: 5 need learned patterns, 3 need multi-stock CTE pattern)
 
 ### What's next (Phase 5 remaining)
-- Answer quality round 2 (use observability `mart_fallback_analysis` to identify highest-impact targets):
-  - Eval coverage: drawdown, moving averages, sector rotation monthly vs. daily undertested (currently 28 fixtures)
-  - Chart quality scoring: Go scorer validates chart presence but not `x_col`/`y_col` sensibility
-  - News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
+- **Learned patterns** (5 fixtures blocked): `drawdown_longest_streak`, `sector_fundamentals_snapshot`, `sector_daily_leaders`, `moving_avg_crossover_screen`, multi-stock CTE (`moving_avg_multi_stock`, `multistock_three_tech_giants`, `multistock_sector_champions`)
+- **Chart x_col/y_col scorer validation**: Go scorer validates chart presence but not column sensibility — `assignments/active/eval_harness_round2.md` Task 3
+- News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
 
 **Active work**: `assignments/active/`
 **Completed reference**: `assignments/completed/`
@@ -77,6 +77,7 @@ Three distinct runtimes — keep them separate:
        mart_request_metrics           ← per-request audit (prod + eval fixture runs)
        mart_pipeline_health           ← Dagster run history
        mart_dbt_test_health           ← data quality: failing tests per model
+       mart_eval_runs                 ← per-fixture pass/fail + observability context (just eval-load-results)
 ```
 
 ## Constitution (Non-Negotiable Principles)
