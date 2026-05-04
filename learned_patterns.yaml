@@ -11,10 +11,99 @@
 #   4. Commit — dbt_docs_sensor picks up the change automatically
 #
 # The local agent reads this file but never writes to it.
+#
+# Ordering: patterns are grouped by domain and ordered by priority within each
+# domain. When the token budget is tight (multi-domain queries), only the first
+# 1-2 patterns per domain are injected — put the most important ones first.
 
 version: 1
 
 patterns:
+
+  # ── equity ────────────────────────────────────────────────────────────────
+  # Priority order: multi-stock CTE (most common failure) → MA crossover → screener → single-stock
+
+  - id: multistock_explicit_cte
+    domain: equity
+    question_type: time_series
+    mart: mart_equity_performance
+    example_sql: |
+      WITH tickers AS (
+        SELECT ticker FROM main_equity.mart_equity_screener
+        WHERE ticker IN ('AAPL', 'MSFT', 'GOOGL')
+      )
+      SELECT p.ticker, p.company_name, p.date, p.close, p.ytd_return
+      FROM main_equity.mart_equity_performance p
+      JOIN tickers t ON p.ticker = t.ticker
+      WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'
+      ORDER BY p.date ASC, p.ticker
+    notes: >
+      Multi-stock explicit comparison — ALWAYS use a single CTE that joins all tickers
+      to performance in one query. NEVER generate separate queries per ticker.
+      The tickers CTE uses mart_equity_screener as the canonical ticker source.
+      This produces one result set with ticker as the color dimension.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
+  - id: multistock_moving_avg_cte
+    domain: equity
+    question_type: time_series
+    mart: mart_equity_performance
+    example_sql: |
+      WITH tickers AS (
+        SELECT ticker FROM main_equity.mart_equity_screener
+        WHERE ticker IN ('MSFT', 'TSLA')
+      )
+      SELECT p.ticker, p.date, p.close,
+        AVG(p.close) OVER (
+          PARTITION BY p.ticker ORDER BY p.date
+          ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+        ) AS ma20
+      FROM main_equity.mart_equity_performance p
+      JOIN tickers t ON p.ticker = t.ticker
+      WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'
+      ORDER BY p.date ASC, p.ticker
+    notes: >
+      Multi-stock moving average — same CTE pattern as multistock_explicit_cte but
+      with a window function. PARTITION BY ticker so each stock gets its own MA.
+      Use ticker as the color dimension.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
+  - id: moving_avg_crossover_screen
+    domain: equity
+    question_type: screener
+    mart: mart_equity_performance
+    example_sql: |
+      WITH ma_calc AS (
+        SELECT ticker, company_name, sector, date,
+          AVG(close) OVER (
+            PARTITION BY ticker ORDER BY date
+            ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+          ) AS ma20,
+          AVG(close) OVER (
+            PARTITION BY ticker ORDER BY date
+            ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+          ) AS ma50
+        FROM main_equity.mart_equity_performance
+        WHERE date >= CURRENT_DATE - INTERVAL '60 days'
+      ),
+      latest AS (
+        SELECT * FROM ma_calc
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) = 1
+      )
+      SELECT ticker, company_name, sector, ma20, ma50,
+             ma20 - ma50 AS ma_spread
+      FROM latest
+      WHERE ma20 > ma50
+      ORDER BY ma_spread DESC
+    notes: >
+      MA crossover screener — compute both MAs with window functions in a CTE, then
+      QUALIFY to the latest date per ticker, then filter. Never GROUP BY for MAs.
+      The 60-day window ensures enough history for a 50-day MA.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
   - id: equity_screener_top_ytd
     domain: equity
     question_type: screener
@@ -25,22 +114,6 @@ patterns:
       ORDER BY ytd_return DESC
       LIMIT 10
     notes: Top N stocks by year-to-date return — default screener pattern
-    promoted_by: claude
-    promoted_at: "2026-05-02"
-
-  - id: drawdown_grouped_by_sector
-    domain: risk
-    question_type: aggregation
-    mart: mart_risk_profile
-    example_sql: |
-      SELECT sector,
-             AVG(drawdown_from_52w_high) AS avg_drawdown,
-             MIN(drawdown_from_52w_high) AS worst_drawdown,
-             COUNT(*)                    AS stock_count
-      FROM main_risk.mart_risk_profile
-      GROUP BY sector
-      ORDER BY avg_drawdown ASC
-    notes: Sector-level drawdown aggregation — mart_risk_profile has sector + drawdown_from_52w_high
     promoted_by: claude
     promoted_at: "2026-05-02"
 
@@ -57,6 +130,42 @@ patterns:
     promoted_by: claude
     promoted_at: "2026-05-02"
 
+  # ── sector ────────────────────────────────────────────────────────────────
+  # Priority order: daily return (most common failure) → market cap (column hallucination fix) → YTD
+
+  - id: sector_daily_return_recent
+    domain: sector
+    question_type: time_series
+    mart: mart_sector_rotation
+    example_sql: |
+      SELECT sector, date, sector_daily_return_ew, pct_tickers_advancing
+      FROM main_sector.mart_sector_rotation
+      WHERE date >= CURRENT_DATE - INTERVAL '7 days'
+      ORDER BY date DESC, sector_daily_return_ew DESC
+    notes: >
+      Sector daily return leaders — use mart_sector_rotation (has date column and
+      sector_daily_return_ew). Never use mart_equity_screener for sector-level daily
+      returns — it has no date column and returns individual stocks, not sectors.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
+  - id: sector_market_cap_snapshot
+    domain: sector
+    question_type: ranking
+    mart: mart_sector_fundamentals
+    example_sql: |
+      SELECT sector, total_market_cap, ticker_count, avg_market_cap,
+             avg_ytd_return_ew, avg_volatility_20d
+      FROM main_sector.mart_sector_fundamentals
+      ORDER BY total_market_cap DESC
+    notes: >
+      Sector market cap ranking — use total_market_cap (NOT market_cap or avg_total_market_cap,
+      which do not exist). mart_sector_fundamentals is a snapshot with no date column.
+      Key columns: total_market_cap, avg_market_cap, ticker_count, avg_ytd_return_ew,
+      avg_mtd_return_ew, avg_sharpe_20d, avg_volatility_20d, avg_drawdown_from_52w_high.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
   - id: sector_ytd_comparison
     domain: sector
     question_type: comparison
@@ -67,6 +176,46 @@ patterns:
       ORDER BY date DESC, sector_ytd_return DESC
       LIMIT 11
     notes: Cross-sector YTD return — use sector_ytd_return (not ytd_return), order by latest date first
+    promoted_by: claude
+    promoted_at: "2026-05-02"
+
+  # ── risk ──────────────────────────────────────────────────────────────────
+  # Priority order: drawdown streak (uses mart_drawdown) → sector aggregation → volatility screen
+
+  - id: drawdown_streak_ranking
+    domain: risk
+    question_type: ranking
+    mart: mart_drawdown
+    example_sql: |
+      WITH latest AS (
+        SELECT ticker, company_name, sector, cumulative_drawdown_days
+        FROM main_risk.mart_drawdown
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) = 1
+      )
+      SELECT ticker, company_name, sector, cumulative_drawdown_days
+      FROM latest
+      ORDER BY cumulative_drawdown_days DESC
+      LIMIT 10
+    notes: >
+      Stocks with longest consecutive drawdown — mart_drawdown is a time-series mart
+      (grain: ticker + date). To get the current streak, QUALIFY to the latest date per
+      ticker, then order by cumulative_drawdown_days. Never GROUP BY — use QUALIFY instead.
+    promoted_by: claude
+    promoted_at: "2026-05-04"
+
+  - id: drawdown_grouped_by_sector
+    domain: risk
+    question_type: aggregation
+    mart: mart_risk_profile
+    example_sql: |
+      SELECT sector,
+             AVG(drawdown_from_52w_high) AS avg_drawdown,
+             MIN(drawdown_from_52w_high) AS worst_drawdown,
+             COUNT(*)                    AS stock_count
+      FROM main_risk.mart_risk_profile
+      GROUP BY sector
+      ORDER BY avg_drawdown ASC
+    notes: Sector-level drawdown aggregation — mart_risk_profile has sector + drawdown_from_52w_high
     promoted_by: claude
     promoted_at: "2026-05-02"
 

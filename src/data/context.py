@@ -57,14 +57,16 @@ def _load() -> dict[str, list[dict[str, Any]]]:
     return _cache
 
 
-def get_few_shot_examples(domain: str | None) -> str:
+def get_few_shot_examples(domain: str | None, max_examples: int = _MAX_EXAMPLES) -> str:
     """Return a formatted few-shot SQL block for the given domain.
 
     Injected after the schema definition in SQL generation prompts. Capped
-    at _MAX_EXAMPLES to stay within the 4096-token budget.
+    at max_examples to stay within the 4096-token budget.
 
     Args:
         domain: Agent domain string ('equity', 'sector', 'risk', 'core') or None.
+        max_examples: Hard cap on examples returned. Callers with wide schemas
+            (3+ domains) should pass 1 to avoid blowing the token budget.
 
     Returns:
         Formatted prompt string, or empty string if no patterns are available.
@@ -82,7 +84,7 @@ def get_few_shot_examples(domain: str | None) -> str:
         return ""
 
     lines = ["-- Validated example queries for this domain (adapt as needed):"]
-    for p in candidates[:_MAX_EXAMPLES]:
+    for p in candidates[:max_examples]:
         note = p.get("notes") or p.get("id", "")
         lines.append(f"-- {note}")
         sql = p.get("example_sql", "").strip()
