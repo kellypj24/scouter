@@ -4,6 +4,10 @@
 
 This package has no LLM imports or calls. Data pipeline only. If you find yourself importing from `src/agent/` or any LLM provider in pipeline code, stop — that's an architecture violation.
 
+## Never use `from __future__ import annotations` in pipeline files
+
+Dagster evaluates `@asset` and `@asset_check` parameter annotations at decoration time. PEP 563 (`from __future__ import annotations`) makes all annotations lazy strings — Dagster gets `"AssetExecutionContext"` instead of the class and throws `DagsterInvalidDefinitionError`, poisoning the entire `pipeline/__init__.py` import chain. Use concrete type annotations only.
+
 ## Dagster Definitions pattern
 
 All assets, checks, sensors, and schedules are collected into lists and wired in `__init__.py`. When adding a new asset or sensor:
