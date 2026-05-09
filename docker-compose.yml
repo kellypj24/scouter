@@ -79,6 +79,10 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_NUM_PARALLEL=1   # serial inference — prevents CPU saturation on CPU-only host
+    deploy:
+      resources:
+        limits:
+          cpus: "6.0"            # hard ceiling — Docker enforces; container can NEVER exceed 600%
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 10s
