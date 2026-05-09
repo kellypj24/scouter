@@ -1,9 +1,7 @@
 """KPI health check — runs after observability_sync to assert all KPIs are on target."""
 
-from __future__ import annotations
-
 import duckdb
-from dagster import AssetCheckResult, AssetCheckSeverity, AssetExecutionContext, asset_check
+from dagster import AssetCheckExecutionContext, AssetCheckResult, AssetCheckSeverity, asset_check
 
 from pipeline.assets.observability import observability_sync
 from src.observability.kpis import evaluate_kpis
@@ -15,7 +13,7 @@ _DB_PATH = "data/scouter.duckdb"
     asset=observability_sync,
     description="Assert all five Scouter KPIs are at or above target.",
 )
-def kpi_health_check(context: AssetExecutionContext) -> AssetCheckResult:
+def kpi_health_check(context: AssetCheckExecutionContext) -> AssetCheckResult:
     """Evaluate all KPIs and fail the check if any are below target.
 
     Returns a WARN (not ERROR) on failure so a below-target KPI doesn't

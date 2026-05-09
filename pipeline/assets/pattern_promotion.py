@@ -9,8 +9,6 @@ file is an inbox for human review; nothing is written to learned_patterns.yaml
 automatically.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 from pathlib import Path
