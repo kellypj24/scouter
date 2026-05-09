@@ -72,11 +72,13 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:0.3.0
+    image: ollama/ollama:0.5.13
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=1   # serial inference — prevents CPU saturation on CPU-only host
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 10s
