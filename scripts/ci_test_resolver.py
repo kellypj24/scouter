@@ -27,6 +27,7 @@ EXPLICIT_MAPPINGS: dict[str, list[str]] = {
     ],
     # scripts/ and pipeline assets that have dedicated test files
     "scripts/promote_patterns.py": ["tests/unit/test_promote_patterns.py"],
+    "scripts/show_kpis.py": ["tests/unit/test_kpis.py"],
     "pipeline/assets/pattern_promotion.py": ["tests/unit/test_promote_patterns.py"],
     # models with dedicated test files
     "src/models/request_state.py": ["tests/unit/test_request_state.py"],
