@@ -27,6 +27,7 @@ EXPLICIT_MAPPINGS: dict[str, list[str]] = {
     ],
     # models with dedicated test files
     "src/models/request_state.py": ["tests/unit/test_request_state.py"],
+    "src/observability/kpis.py": ["tests/unit/test_kpis.py"],
     # api/ modules use a prefixed test name
     "api/main.py": ["tests/unit/test_api_main.py"],
     "api/streaming.py": ["tests/unit/test_api_streaming.py"],

@@ -104,6 +104,26 @@ eval-load-results:
 eval-results:
     uv run python scripts/query_eval_results.py
 
+# Show current KPI values vs targets (requires observability data in DuckDB)
+kpis:
+    uv run python -c "
+import duckdb
+from src.observability.kpis import evaluate_kpis
+conn = duckdb.connect('data/scouter.duckdb', read_only=True)
+results = evaluate_kpis(conn)
+conn.close()
+w = max(len(r['name']) for r in results)
+for r in results:
+    if r['error']:
+        print(f\"{r['name']:<{w}}  {'N/A':>10}  target {r['target']:.2f}  ERROR: {r['error'][:50]}\")
+    else:
+        status = 'PASS' if r['passing'] else 'FAIL'
+        unit = '%' if r['unit'] == 'ratio' else 'ms'
+        val = f\"{r['current'] * 100:.1f}\" if r['unit'] == 'ratio' else f\"{r['current']:.0f}\"
+        tgt = f\"{r['target'] * 100:.1f}\" if r['unit'] == 'ratio' else f\"{r['target']:.0f}\"
+        print(f\"{r['name']:<{w}}  {val:>8}{unit}  target {tgt}{unit}  [{status}]\")
+"
+
 # Start FastAPI harness service (port 8001)
 api:
     uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
