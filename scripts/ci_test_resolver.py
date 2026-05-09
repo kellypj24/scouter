@@ -25,8 +25,9 @@ EXPLICIT_MAPPINGS: dict[str, list[str]] = {
         "tests/unit/test_loader.py",
         "tests/integration/test_loader.py",
     ],
-    # scripts/ that have dedicated test files (not discovered by convention)
+    # scripts/ and pipeline assets that have dedicated test files
     "scripts/promote_patterns.py": ["tests/unit/test_promote_patterns.py"],
+    "pipeline/assets/pattern_promotion.py": ["tests/unit/test_promote_patterns.py"],
     # models with dedicated test files
     "src/models/request_state.py": ["tests/unit/test_request_state.py"],
     "src/observability/kpis.py": ["tests/unit/test_kpis.py"],
