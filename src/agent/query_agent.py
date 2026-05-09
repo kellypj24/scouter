@@ -32,6 +32,7 @@ from src.data.schema import (
     get_schema_prompt,
     load_schema_context,
 )
+from src.models.agent import DomainClassification
 from src.models.response import QueryResult
 from src.observability.logger import get_obs_logger
 
@@ -215,12 +216,14 @@ class QueryAgent:
                 "P/E, earnings) are not ingested."
             )
 
-        domains = self.classify_domains(question)
+        classification = self.classify_domains(question)
+        domains = classification.domains
         schema_prompt = get_schema_prompt(self._conn, domains=domains)
 
         sql: str | None = None
         last_error: str | None = None
         all_failures_schema = True  # flipped to False if any failure is an LLM error
+        domain_str = ",".join(domains) if domains else "all"
 
         obs = get_obs_logger()
         for attempt, prompt_domains in enumerate([domains, None]):
@@ -236,7 +239,8 @@ class QueryAgent:
                     gen_ms,
                     success=True,
                     attempt=attempt + 1,
-                    domain=",".join(domains) if domains else "all",
+                    domain=domain_str,
+                    domain_confidence=classification.confidence,
                     sql_length=len(sql),
                 )
                 break
@@ -250,7 +254,8 @@ class QueryAgent:
                     success=False,
                     attempt=attempt + 1,
                     error=last_error,
-                    domain=",".join(domains) if domains else "all",
+                    domain=domain_str,
+                    domain_confidence=classification.confidence,
                 )
                 logger.warning("SQL generation attempt %d failed (LLM error): %s", attempt + 1, exc)
             except ValueError as exc:
@@ -262,7 +267,8 @@ class QueryAgent:
                     success=False,
                     attempt=attempt + 1,
                     error=last_error,
-                    domain=",".join(domains) if domains else "all",
+                    domain=domain_str,
+                    domain_confidence=classification.confidence,
                 )
                 logger.warning("SQL generation attempt %d failed: %s", attempt + 1, exc)
                 # Don't retry for definitively unanswerable errors — a retry would only
@@ -315,7 +321,7 @@ class QueryAgent:
                 "query_pattern",
                 0,
                 success=True,
-                domain=",".join(domains) if domains else "all",
+                domain=domain_str,
                 mart=_extract_mart(sql),
                 sql_hash=_sql_hash(sql),
                 row_count=result.row_count,
@@ -374,17 +380,20 @@ class QueryAgent:
             f"Available columns in {tbl_name}: {available}."
         )
 
-    def classify_domains(self, question: str) -> list[str] | None:
-        """Return relevant domain names based on question keywords.
+    def classify_domains(self, question: str) -> DomainClassification:
+        """Classify question into domain(s) and return a confidence score.
 
-        Returns None (= all domains) if no keywords match, so the LLM
-        sees the full schema rather than an empty one.
+        Returns DomainClassification(domains=None, confidence=0.5) when no
+        keywords match — callers should use the full schema in that case.
 
-        Fallback for multi-domain questions: GICS sector labels
-        (e.g. "Technology", "Healthcare") are not in _DOMAIN_KEYWORDS but
-        clearly require the sector mart.  When any sector name appears
-        alongside at least one other matched domain, the sector domain is
-        added even if no short keyword ("sector", "industry" …) fired.
+        Confidence rules:
+          - No match:          0.5  (ambiguous — full schema is safer)
+          - Single domain:     0.85 (clear routing signal)
+          - Multiple domains:  0.7  (broader schema needed, higher miss risk)
+          - Sector expansion:  min(base, 0.65)  (inferred, not explicit)
+
+        A confidence < 0.4 widens the result to None regardless of matched
+        keywords — reserved for future scoring refinements.
         """
         q = question.lower()
         matched = [
@@ -400,10 +409,23 @@ class QueryAgent:
         # Only expand when the question already matched at least one domain — avoids
         # turning "Technology data" (no financial keywords) into a sector-only query
         # when None (all schemas) is already the right answer.
+        sector_expansion_fired = False
         if matched and "sector" not in matched and any(name in q for name in _SECTOR_NAME_KEYWORDS):
             matched = list(dict.fromkeys(matched + ["sector"]))
+            sector_expansion_fired = True
 
-        return matched or None
+        if not matched:
+            return DomainClassification(domains=None, confidence=0.5)
+
+        non_core = [d for d in matched if d != "core"]
+        confidence = 0.85 if len(non_core) == 1 else 0.7
+        if sector_expansion_fired:
+            confidence = min(confidence, 0.65)
+
+        if confidence < 0.4:
+            return DomainClassification(domains=None, confidence=confidence)
+
+        return DomainClassification(domains=matched, confidence=confidence)
 
     async def _generate_sql(
         self,

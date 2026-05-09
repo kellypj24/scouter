@@ -1,8 +1,25 @@
 """Agent-level request/response models."""
 
+from dataclasses import dataclass
+
 from pydantic import BaseModel
 
 from src.models.response import NarrativeBlock
+
+
+@dataclass
+class DomainClassification:
+    """Result of domain keyword classification for a question.
+
+    Attributes:
+        domains: Matched domain names (e.g. ['core', 'equity']), or None if no
+            keywords matched (caller should use the full schema).
+        confidence: Routing confidence 0.0–1.0. Lower scores indicate ambiguous
+            questions where a wider schema may produce better SQL.
+    """
+
+    domains: list[str] | None
+    confidence: float
 
 
 class AgentRequest(BaseModel):

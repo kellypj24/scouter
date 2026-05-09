@@ -13,6 +13,9 @@ NEVER split these — they are always ONE sub-question:
   → one SQL with ORDER BY. Do NOT invent multiple interpretations (by market cap, by ROE).
 - Any comparison: "X vs Y", "X compared to Y", "relative to", "compared to its Y" \
   → one SQL handles it (e.g. price vs moving average is a single window-function query).
+- Any multi-stock comparison or trend naming multiple tickers — "Apple and Microsoft", \
+  "Nvidia and JPMorgan", "Apple, Google, and Microsoft", "20-day MA for X and Y" \
+  → ALWAYS one query using a CTE with ticker IN (...). NEVER one sub-question per ticker.
 - Any time-series/trend question about a single entity, including those with a derived \
   metric ("price compared to its 50-day moving average", "vs its average") — still ONE query.
 - Any single-entity question about one stock, sector, or metric.
