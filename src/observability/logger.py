@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS spans (
     mart               TEXT,
     sql_hash           TEXT,
     domain             TEXT,
-    sub_question_count INTEGER
+    sub_question_count INTEGER,
+    domain_confidence  REAL
 );
 """
 
@@ -104,6 +105,8 @@ class ObservabilityLogger:
                 conn.execute("ALTER TABLE spans ADD COLUMN mart TEXT")
             if "sql_hash" not in existing:
                 conn.execute("ALTER TABLE spans ADD COLUMN sql_hash TEXT")
+            if "domain_confidence" not in existing:
+                conn.execute("ALTER TABLE spans ADD COLUMN domain_confidence REAL")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
@@ -149,8 +152,8 @@ class ObservabilityLogger:
                 "INSERT INTO spans"
                 " (request_id, stage, attempt, started_at, latency_ms, success,"
                 "  error, sql_length, row_count, chart_source, news_items, domain,"
-                "  sub_question_count, mart, sql_hash)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  sub_question_count, mart, sql_hash, domain_confidence)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     request_id,
                     stage,
@@ -167,6 +170,7 @@ class ObservabilityLogger:
                     metadata.get("sub_question_count"),
                     metadata.get("mart"),
                     metadata.get("sql_hash"),
+                    metadata.get("domain_confidence"),
                 ),
             )
 
@@ -227,6 +231,7 @@ class ObservabilityLogger:
             attempt: Retry attempt number (1-indexed).
             **metadata: Optional fields — error, sql_length, row_count,
                 chart_source (llm|inferred|none), news_items, domain,
+                domain_confidence (sql_gen stage — 0.0–1.0 routing confidence),
                 sub_question_count (decompose stage only),
                 mart (query_pattern stage — primary mart referenced in SQL),
                 sql_hash (query_pattern stage — 12-char MD5 of normalised SQL).

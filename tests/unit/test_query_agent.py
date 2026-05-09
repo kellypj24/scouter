@@ -32,7 +32,16 @@ def schema_context():
                     ColumnSchema(name="ticker", dtype="VARCHAR"),
                     ColumnSchema(name="ytd_return", dtype="DOUBLE"),
                 ],
-            )
+            ),
+            ModelSchema(
+                name="test_data",
+                domain="equity",
+                description="Test fixture table",
+                columns=[
+                    ColumnSchema(name="ticker", dtype="VARCHAR"),
+                    ColumnSchema(name="ytd_return", dtype="DOUBLE"),
+                ],
+            ),
         ]
     )
 
@@ -65,31 +74,58 @@ def agent(mock_provider, conn, schema_context):
 
 class TestClassifyDomains:
     def test_sector_keyword(self, agent):
-        domains = agent.classify_domains("which sector has highest rotation?")
-        assert "sector" in domains
-        assert "core" in domains
+        result = agent.classify_domains("which sector has highest rotation?")
+        assert "sector" in result.domains
+        assert "core" in result.domains
 
     def test_risk_keyword(self, agent):
-        domains = agent.classify_domains("show me drawdown and sharpe ratio")
-        assert "risk" in domains
+        result = agent.classify_domains("show me drawdown and sharpe ratio")
+        assert "risk" in result.domains
 
     def test_equity_keyword(self, agent):
-        domains = agent.classify_domains("top performing stocks by momentum")
-        assert "equity" in domains
+        result = agent.classify_domains("top performing stocks by momentum")
+        assert "equity" in result.domains
 
     def test_no_match_returns_none(self, agent):
-        domains = agent.classify_domains("hello world")
-        assert domains is None
+        result = agent.classify_domains("hello world")
+        assert result.domains is None
 
     def test_multiple_domains(self, agent):
-        domains = agent.classify_domains("compare sector volatility and beta")
-        assert "sector" in domains
-        assert "risk" in domains
-        assert "core" in domains
+        result = agent.classify_domains("compare sector volatility and beta")
+        assert "sector" in result.domains
+        assert "risk" in result.domains
+        assert "core" in result.domains
 
     def test_always_prepends_core(self, agent):
-        domains = agent.classify_domains("show me sector performance")
-        assert domains[0] == "core"
+        result = agent.classify_domains("show me sector performance")
+        assert result.domains[0] == "core"
+
+    # -- confidence scoring --------------------------------------------------
+
+    def test_no_match_confidence(self, agent):
+        result = agent.classify_domains("hello world")
+        assert result.domains is None
+        assert result.confidence == 0.5
+
+    def test_single_domain_confidence(self, agent):
+        # "gics sector data" — only sector keyword fires, no equity/risk overlap.
+        result = agent.classify_domains("show me gics sector data")
+        assert result.confidence == 0.85
+
+    def test_multi_domain_confidence(self, agent):
+        result = agent.classify_domains("compare sector volatility and beta")
+        # sector + risk → two non-core domains → 0.7
+        assert result.confidence == 0.7
+
+    def test_sector_expansion_confidence(self, agent):
+        result = agent.classify_domains("top Technology stocks by YTD return")
+        # equity matched + sector expansion via 'Technology' → min(0.7 or 0.85, 0.65)
+        assert result.confidence == 0.65
+
+    def test_single_equity_no_expansion_confidence(self, agent):
+        result = agent.classify_domains("top performing stocks by momentum")
+        # equity only, no sector expansion → 0.85
+        assert result.confidence == 0.85
 
 
 class TestValidateSQL:
@@ -413,35 +449,35 @@ class TestClassifyDomainsSectorNameExpansion:
     def test_sector_name_expands_to_sector_domain(self, agent):
         # "healthcare" is in _SECTOR_NAME_KEYWORDS; "performance" triggers equity.
         # sector domain should be added even though no short sector keyword matched.
-        domains = agent.classify_domains("Healthcare sector performance this year")
-        assert "sector" in domains
-        assert "equity" in domains
+        result = agent.classify_domains("Healthcare sector performance this year")
+        assert "sector" in result.domains
+        assert "equity" in result.domains
 
     def test_technology_triggers_sector_expansion(self, agent):
         # "sharpe" → risk; "technology" should add sector via expansion.
-        domains = agent.classify_domains("What is the average Sharpe ratio in Technology?")
-        assert "risk" in domains
-        assert "sector" in domains
+        result = agent.classify_domains("What is the average Sharpe ratio in Technology?")
+        assert "risk" in result.domains
+        assert "sector" in result.domains
 
     def test_financials_triggers_sector_expansion(self, agent):
         # "drawdown" → risk; "financials" contains "financial" substring → sector.
-        domains = agent.classify_domains("Show drawdown for Financials stocks")
-        assert "risk" in domains
-        assert "sector" in domains
+        result = agent.classify_domains("Show drawdown for Financials stocks")
+        assert "risk" in result.domains
+        assert "sector" in result.domains
 
     def test_no_expansion_without_financial_keywords(self, agent):
         # "technology" alone (no financial keyword) → return None, not ["core", "sector"].
-        domains = agent.classify_domains("technology data")
-        assert domains is None
+        result = agent.classify_domains("technology data")
+        assert result.domains is None
 
     def test_expansion_does_not_duplicate_sector(self, agent):
         # "sector" keyword already fires sector domain; guard should not add a duplicate.
-        domains = agent.classify_domains("sector volatility in Technology")
-        assert domains.count("sector") == 1
+        result = agent.classify_domains("sector volatility in Technology")
+        assert result.domains.count("sector") == 1
 
     def test_core_always_first_after_expansion(self, agent):
-        domains = agent.classify_domains("Healthcare stock returns")
-        assert domains[0] == "core"
+        result = agent.classify_domains("Healthcare stock returns")
+        assert result.domains[0] == "core"
 
 
 # ── Guard 4 (_validate_schema): screener-only query on trend question ─────────
