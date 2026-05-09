@@ -1,15 +1,387 @@
 {
-  "run_at": "2026-05-04T13:20:24.898842Z",
-  "total": 1,
-  "passed": 0,
+  "run_at": "2026-05-08T02:16:52.93101Z",
+  "total": 45,
+  "passed": 7,
   "fixtures": [
+    {
+      "id": "screener_top10_ytd",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed: Do not add LIMIT to the outer mart_equity_performance query — it truncates the time series. Remove LIMIT from the outer SELECT entirely. Only use LIMIT inside a CTE subquery to select which tickers to include. All table names MUST be fully qualified (schema.table). Example:\n  WITH top AS (\n    SELECT ticker FROM main_equity.mart_equity_screener\n    ORDER BY ytd_return DESC LIMIT 5\n  )\n  SELECT p.ticker, p.date, p.close, p.daily_return\n  FROM main_equity.mart_equity_performance p\n  JOIN top ON p.ticker = top.ticker\n  WHERE p.date \u003e= CURRENT_DATE - INTERVAL '3 months'\n  ORDER BY p.date ASC, p.ticker\nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 234619
+    },
+    {
+      "id": "screener_low_volatility",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 1537
+    },
+    {
+      "id": "screener_high_sharpe",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 1526
+    },
+    {
+      "id": "screener_large_cap",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373693
+    },
+    {
+      "id": "timeseries_apple_6m",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 372914
+    },
+    {
+      "id": "timeseries_nvidia_ytd",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 50)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1475
+    },
+    {
+      "id": "multistock_top5_trend",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 200)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1514
+    },
+    {
+      "id": "multistock_faang_comparison",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 50)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1477
+    },
+    {
+      "id": "moving_avg_apple",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 30)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1818
+    },
+    {
+      "id": "moving_avg_comparison",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1859
+    },
+    {
+      "id": "sector_ytd_performance",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 1535
+    },
+    {
+      "id": "sector_rotation",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s:"
+      ],
+      "elapsed_ms": 268108
+    },
+    {
+      "id": "multistock_volatile_trend",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 6788
+    },
+    {
+      "id": "multistock_explicit_comparison",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 48836
+    },
+    {
+      "id": "risk_drawdown",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 63174
+    },
+    {
+      "id": "risk_profile_sharpe",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "sql_table: expected \"mart_risk_profile\" in SQL"
+      ],
+      "elapsed_ms": 63126
+    },
+    {
+      "id": "risk_drawdown_history",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 50)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_drawdown\" in SQL"
+      ],
+      "elapsed_ms": 1728
+    },
+    {
+      "id": "sector_rotation_trend",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_sector_rotation\" in SQL"
+      ],
+      "elapsed_ms": 1520
+    },
+    {
+      "id": "sector_fundamentals_snapshot",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "sql_table: expected \"mart_sector_fundamentals\" in SQL"
+      ],
+      "elapsed_ms": 1563
+    },
+    {
+      "id": "drawdown_by_sector",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "sql_table: expected \"mart_sector_fundamentals\" in SQL"
+      ],
+      "elapsed_ms": 1507
+    },
+    {
+      "id": "drawdown_tech_screen",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 1585
+    },
+    {
+      "id": "moving_avg_nvidia",
+      "passed": false,
+      "failures": [
+        "min_rows: best block had 0 rows (need 20)",
+        "chart_type: got \"\", expected \"line\"",
+        "chart_built: no chart spec"
+      ],
+      "elapsed_ms": 139757
+    },
+    {
+      "id": "sector_monthly_rotation",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s:"
+      ],
+      "elapsed_ms": 271071
+    },
+    {
+      "id": "risk_high_volatility_screen",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 136205
+    },
+    {
+      "id": "equity_tech_sector_screen",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 42418
+    },
+    {
+      "id": "sector_ytd_ranked",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373326
+    },
+    {
+      "id": "drawdown_longest_streak",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373327
+    },
+    {
+      "id": "drawdown_sector_avg",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373931
+    },
+    {
+      "id": "drawdown_deep_screen",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373919
+    },
+    {
+      "id": "moving_avg_50_200",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed: Do not add LIMIT to the outer mart_equity_performance query — it truncates the time series. Remove LIMIT from the outer SELECT entirely. Only use LIMIT inside a CTE subquery to select which tickers to include. All table names MUST be fully qualified (schema.table). Example:\n  WITH top AS (\n    SELECT ticker FROM main_equity.mart_equity_screener\n    ORDER BY ytd_return DESC LIMIT 5\n  )\n  SELECT p.ticker, p.date, p.close, p.daily_return\n  FROM main_equity.mart_equity_performance p\n  JOIN top ON p.ticker = top.ticker\n  WHERE p.date \u003e= CURRENT_DATE - INTERVAL '3 months'\n  ORDER BY p.date ASC, p.ticker\nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 360772
+    },
+    {
+      "id": "moving_avg_multi_stock",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed: Do not add LIMIT to the outer mart_equity_performance query — it truncates the time series. Remove LIMIT from the outer SELECT entirely. Only use LIMIT inside a CTE subquery to select which tickers to include. All table names MUST be fully qualified (schema.table). Example:\n  WITH top AS (\n    SELECT ticker FROM main_equity.mart_equity_screener\n    ORDER BY ytd_return DESC LIMIT 5\n  )\n  SELECT p.ticker, p.date, p.close, p.daily_return\n  FROM main_equity.mart_equity_performance p\n  JOIN top ON p.ticker = top.ticker\n  WHERE p.date \u003e= CURRENT_DATE - INTERVAL '3 months'\n  ORDER BY p.date ASC, p.ticker\nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 356817
+    },
+    {
+      "id": "moving_avg_crossover_screen",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}"
+      ],
+      "elapsed_ms": 373266
+    },
+    {
+      "id": "sector_daily_leaders",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed: Column 'highest_daily_return' does not exist in main_sector.mart_sector_rotation. Available columns in mart_sector_rotation: avg_volume_per_ticker, date, month, pct_tickers_advancing, quarter, sector, sector_cumulative_return_ew, sector_daily_return_ew, sector_rank_by_cumulative_return, sector_ytd_return, ticker_count, total_volume, year."
+      ],
+      "elapsed_ms": 275964
+    },
+    {
+      "id": "sector_monthly_vs_ytd",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 1537
+    },
     {
       "id": "multistock_three_tech_giants",
       "passed": false,
       "failures": [
-        "exception: runner exited non-zero: WARNING:src.agent.query_agent:SQL generation attempt 1 failed: Table 'apple_stock_prices' does not exist. Always use fully-qualified table names from the schema (e.g. main_sector.mart_sector_rotation, main_equity.mart_equity_screener). Never invent table names.\nWARNING:src.agent.query_agent:SQL generation attempt 2 failed (LLM error): Ollama timed out after 60s: \nWARNING:src.agent.query_agent:Both LLM attempts failed — using rule-based fallback\nWARNING:src.agent.narrative_agent:Narrative generation failed — using fallback: Ollama timed out after 60s: \nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s: \nERROR:asyncio:Task exception was never retrieved\nfuture: \u003cTask finished name='Task-52' coro=\u003cto_thread() done, defined at /opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py:12\u003e exception=OperationalError('disk I/O error')\u003e\nTraceback (most recent call last):\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/pjkelly/scouter/src/observability/logger.py\", line 148, in _sync_write_span\n    conn.execute(\n    ~~~~~~~~~~~~^\n        \"INSERT INTO spans\"\n        ^^^^^^^^^^^^^^^^^^^\n    ...\u003c20 lines\u003e...\n        ),\n        ^^\n    )\n    ^\nsqlite3.OperationalError: disk I/O error\nERROR:asyncio:Task exception was never retrieved\nfuture: \u003cTask finished name='Task-51' coro=\u003cto_thread() done, defined at /opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py:12\u003e exception=OperationalError('disk I/O error')\u003e\nTraceback (most recent call last):\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/pjkelly/scouter/src/observability/logger.py\", line 148, in _sync_write_span\n    conn.execute(\n    ~~~~~~~~~~~~^\n        \"INSERT INTO spans\"\n        ^^^^^^^^^^^^^^^^^^^\n    ...\u003c20 lines\u003e...\n        ),\n        ^^\n    )\n    ^\nsqlite3.OperationalError: disk I/O error\nERROR:asyncio:Task exception was never retrieved\nfuture: \u003cTask finished name='Task-50' coro=\u003cto_thread() done, defined at /opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py:12\u003e exception=OperationalError('disk I/O error')\u003e\nTraceback (most recent call last):\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/pjkelly/scouter/src/observability/logger.py\", line 148, in _sync_write_span\n    conn.execute(\n    ~~~~~~~~~~~~^\n        \"INSERT INTO spans\"\n        ^^^^^^^^^^^^^^^^^^^\n    ...\u003c20 lines\u003e...\n        ),\n        ^^\n    )\n    ^\nsqlite3.OperationalError: disk I/O error\nERROR:asyncio:Task exception was never retrieved\nfuture: \u003cTask finished name='Task-58' coro=\u003cto_thread() done, defined at /opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py:12\u003e exception=OperationalError('disk I/O error')\u003e\nTraceback (most recent call last):\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py\", line 25, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/pjkelly/scouter/src/observability/logger.py\", line 148, in _sync_write_span\n    conn.execute(\n    ~~~~~~~~~~~~^\n        \"INSERT INTO spans\"\n        ^^^^^^^^^^^^^^^^^^^\n    ...\u003c20 lines\u003e...\n        ),\n        ^^\n    )\n    ^\nsqlite3.OperationalError: disk I/O error"
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 100)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
       ],
-      "elapsed_ms": 811579
+      "elapsed_ms": 1586
+    },
+    {
+      "id": "multistock_sector_champions",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 50)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_equity_performance\" in SQL"
+      ],
+      "elapsed_ms": 1604
+    },
+    {
+      "id": "sector_cumulative_return_trend",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 50)",
+        "chart_type: got \"bar\", expected \"line\"",
+        "sql_table: expected \"mart_sector_rotation\" in SQL"
+      ],
+      "elapsed_ms": 1671
+    },
+    {
+      "id": "risk_scatter_all_stocks",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used",
+        "min_rows: best block had 20 rows (need 100)"
+      ],
+      "elapsed_ms": 1760
+    },
+    {
+      "id": "risk_low_vol_high_sharpe",
+      "passed": false,
+      "failures": [
+        "exception: runner exited non-zero: WARNING:src.agent.orchestrator:Decomposition failed — treating as single question: Ollama returned 404: {\"error\":\"model 'qwen2.5:14b' not found\"}\nWARNING:src.agent.query_agent:SQL generation attempt 1 failed (LLM error): Ollama timed out after 60s:"
+      ],
+      "elapsed_ms": 280902
+    },
+    {
+      "id": "screener_energy_sector_top",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 2166
+    },
+    {
+      "id": "screener_large_cap_low_drawdown",
+      "passed": false,
+      "failures": [
+        "no_fallback: rule-based fallback SQL was used"
+      ],
+      "elapsed_ms": 1814
+    },
+    {
+      "id": "unanswerable_revenue",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 1233
+    },
+    {
+      "id": "unanswerable_eps",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 914
+    },
+    {
+      "id": "unanswerable_dividend",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 993
+    },
+    {
+      "id": "unanswerable_pe_ratio",
+      "passed": true,
+      "failures": [],
+      "elapsed_ms": 4892
     }
   ]
 }
