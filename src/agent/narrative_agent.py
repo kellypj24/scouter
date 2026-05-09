@@ -357,9 +357,9 @@ def _infer_chart_spec(
     # (chart_type is None), so "month versus year to date" stays a bar chart.
     if question and len(numeric_cols) >= 2:
         q_lower = question.lower()
-        if chart_type in ("bar", None) and any(kw in q_lower for kw in _SCATTER_KEYWORDS_STRONG):
-            chart_type = "scatter"
-        elif chart_type is None and any(kw in q_lower for kw in _SCATTER_KEYWORDS_WEAK):
+        if (
+            chart_type in ("bar", None) and any(kw in q_lower for kw in _SCATTER_KEYWORDS_STRONG)
+        ) or (chart_type is None and any(kw in q_lower for kw in _SCATTER_KEYWORDS_WEAK)):
             chart_type = "scatter"
 
     if chart_type is None:
