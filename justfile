@@ -104,6 +104,16 @@ eval-load-results:
 eval-results:
     uv run python scripts/query_eval_results.py
 
+# Show current KPI values vs targets (requires observability data in DuckDB)
+kpis:
+    uv run python scripts/show_kpis.py
+
+# Surface consistently-failing eval fixtures as pattern candidates for human review.
+# Writes pattern_candidates.yaml (gitignored). Review entries, fill example_sql,
+# then promote manually to learned_patterns.yaml.
+promote-patterns:
+    uv run python scripts/promote_patterns.py
+
 # Start FastAPI harness service (port 8001)
 api:
     uv run uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload

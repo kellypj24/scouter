@@ -52,8 +52,23 @@ def get_added_files(base_ref: str) -> list[str]:
     return files
 
 
+def _explicit_mappings() -> dict[str, list[str]]:
+    """Load EXPLICIT_MAPPINGS from ci_test_resolver.py without a full import."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ci_test_resolver", Path(__file__).parent / "ci_test_resolver.py"
+    )
+    if spec and spec.loader:
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[arg-type]
+        return getattr(mod, "EXPLICIT_MAPPINGS", {})
+    return {}
+
+
 def missing_test_files(added_files: list[str]) -> list[tuple[str, str]]:
     """Return (source_file, expected_test_path) for newly added source files with no test."""
+    explicit = _explicit_mappings()
     gaps = []
     for f in added_files:
         if not f.endswith(".py"):
@@ -64,6 +79,11 @@ def missing_test_files(added_files: list[str]) -> list[tuple[str, str]]:
             continue
         # Skip files that are themselves in tests/
         if f.startswith("tests/"):
+            continue
+
+        # Honour explicit mappings from ci_test_resolver.py — if the mapped
+        # test file exists, this source file is considered covered.
+        if f in explicit and any(Path(t).exists() for t in explicit[f]):
             continue
 
         module = Path(f).stem

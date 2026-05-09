@@ -27,9 +27,10 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 4**: `api/` (FastAPI SSE service), `gateway/` (Go HTTP proxy), `app/main.py` rewritten as httpx SSE client — clean client/server boundary, no direct `src/` imports from UI
 - **Phase 5 (partial)**: Answer quality hardening (28 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2; contextual knowledge base (dbt docs sensor, few-shot injection via `learned_patterns.yaml`); Docker Compose phase 2 (Ollama + Dagster webserver/daemon services); schema-level SQL guards (Guards 1-3 in `query_agent._validate_schema`) cutting first-attempt failures for sector snapshot misuse, pctile hallucination, and avg_drawdown on risk mart — 27/28 eval fixtures passing, 290 unit tests, 82% coverage
 - **Phase 5 (eval harness round 2, branch `feature/eval-harness-round2`)**: Expanded eval suite to 45 fixtures (was 28); narrative agent improvements (multi-sector color inference, scatter keyword detection, x/y inference fixes); SQL prompt scatter/correlation guidance; Guard 5 (unqualified unknown table names); 11 learned patterns with domain priority ordering; `mart_eval_runs` observability feedback loop — **37/45 passing**, 8 remaining failures are local model ceiling (see model notes below)
+- **Phase 5 (ORACLE patterns, branch `feature/oracle-patterns`)**: Four architectural improvements from the ORACLE multi-agent spec: (1) `DomainClassification(domains, confidence)` return from `classify_domains()` — confidence logged to `sql_gen` spans; (2) `RequestState` shared state object in orchestrator — `classify_domains()` called once per request; (3) `scripts/promote_patterns.py` + Dagster `pattern_promotion` asset — auto-surfaces consistently-failing eval fixtures as candidates in `pattern_candidates.yaml` (human-reviewed before promotion to `learned_patterns.yaml`); (4) `src/observability/kpis.py` — 5 KPI targets with `evaluate_kpis()` + Dagster `kpi_health_check` + `just kpis`
 
 ### What's next (Phase 5 remaining)
-- **Model ceiling**: 8 fixtures blocked by `qwen2.5-coder:3b` limits — see **Local model capability ceiling** section below for details and workarounds
+- **Model ceiling**: 8 fixtures blocked by `qwen2.5-coder:3b` limits — see **Local model capability ceiling** section below; switch to `SCOUTER_LLM_PROVIDER=anthropic` to clear all 8
 - **Chart x_col/y_col scorer validation**: Go scorer validates chart presence but not column sensibility — `assignments/active/eval_harness_round2.md` Task 3
 - **Domain-specific fallback SQL**: replace single generic fallback with per-domain templates so model failures produce useful data, not empty results
 - News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
@@ -182,7 +183,8 @@ src/
     charts.py           # Plotly chart builders keyed to ChartType enum
   models/
     response.py         # Pydantic: NarrativeBlock, QueryResult, ChartSpec
-    agent.py            # Pydantic: AgentRequest, AgentResponse
+    agent.py            # Pydantic: AgentRequest, AgentResponse + DomainClassification dataclass
+    request_state.py    # RequestState dataclass — per-request state carrier in orchestrator
   utils/
     tokens.py           # Token counting + truncation
     cache.py            # Response cache
@@ -190,15 +192,18 @@ src/
   observability/
     context.py          # request_id ContextVar — set by middleware, flows to all coroutines
     logger.py           # ObservabilityLogger — SQLite WAL writer, asyncio.to_thread, fire-and-forget
+    kpis.py             # KPI targets (5) + evaluate_kpis() — read-only DuckDB queries
 pipeline/               # Dagster — data pipeline only, no LLM calls
   assets/
     ingestion.py        # Raw data → DuckDB asset
     observability.py    # Syncs SQLite logs + Dagster run history → DuckDB raw_observability
     dbt_tests.py        # Runs dbt test, writes results directly to DuckDB (no SQLite)
     schema_context.py   # dbt_docs_generate asset — runs dbt docs generate via subprocess
+    pattern_promotion.py # Runs promote_patterns.py after each observability_sync
     transformations.py  # @dbt_assets
   checks/
-    freshness.py        # Asset freshness checks
+    freshness.py        # Asset freshness check on raw_market_data
+    kpi_health.py       # @asset_check on observability_sync — WARN when any KPI below target
   resources/
     connections.py      # DuckDB resource, dbt resource
   schedules/
@@ -240,6 +245,9 @@ eval/                   # Go eval runner — replaces eval_score.py
   go.mod / go.sum
 scripts/
   eval_runner.py        # Single-question headless runner (JSON output — called by Go runner)
+  promote_patterns.py   # Surfaces consistently-failing eval fixtures as pattern candidates
+pattern_candidates.yaml # Machine-generated (gitignored) — review, fill example_sql, promote manually
+learned_patterns.yaml   # Human-curated few-shot SQL examples; never auto-written by agent code
 ```
 
 ## Tooling
@@ -259,7 +267,10 @@ Run `just lint && just test` before committing or pushing. CI is a backstop — 
 | `just eval-go` | Run all fixtures concurrently (Go runner) — primary eval command |
 | `just eval-go-filter screener` | Run fixtures whose ID contains a substring |
 | `just eval-go-build` | Compile Go runner to `eval/scouter-eval` binary |
-| `uv run python scripts/eval_score.py` | Python sequential scorer (reference / fallback) |
+| `just eval-load-results` | Load last eval run into DuckDB + rebuild `mart_eval_runs` |
+| `just eval-results` | Query `mart_eval_runs` for latest run summary |
+| `just promote-patterns` | Surface consistently-failing fixtures as candidates in `pattern_candidates.yaml` |
+| `just kpis` | Print current vs target for all 5 KPIs against live DuckDB |
 
 The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess per fixture.
 `eval_runner.py` is required. `eval_score.py` has been deleted — use `just eval-go` instead.
@@ -269,12 +280,16 @@ The Go runner (`eval/`) calls `scripts/eval_runner.py --json` as a subprocess pe
 - **Async/await** for all LLM calls
 - **Pydantic** for all LLM response validation
 - **Schema injection** — always prepend DuckDB schema to SQL-generation prompts
+- **DomainClassification** — `QueryAgent.classify_domains()` returns `DomainClassification(domains, confidence)`. Confidence rules: no match → 0.5, single domain → 0.85, multi-domain → 0.7, sector name expansion → min(base, 0.65). Confidence is logged on every `sql_gen` span.
+- **RequestState** — `Orchestrator.run()` / `stream()` create a `RequestState(request_id, original_question, classification, sub_questions, t0)` at request start. `classify_domains()` is called exactly once per request. `domain_str` and `elapsed_ms` are properties.
 - **Dagster Definitions** pattern — `all_assets`, `all_checks`, `all_schedules`, `all_sensors` lists wired in `pipeline/__init__.py`
 - **Event-based sensors** — no cron schedules; sensors gate on real conditions (file mtime, data age) and self-correct after machine sleep
-- **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises. All 5 stages logged: `decompose` (sub_question_count), `sql_gen` (domain, sql_length, attempt), `sql_exec` (row_count), `narrative` (chart_source), `news` (news_items). Domain captured at both request and span level via `QueryAgent.classify_domains()`.
+- **Observability write path** — `ObservabilityLogger.log_span()` is fire-and-forget (`asyncio.create_task` + `asyncio.to_thread`); logging never blocks or raises. All 5 stages logged: `decompose` (sub_question_count), `sql_gen` (domain, domain_confidence, sql_length, attempt), `sql_exec` (row_count), `narrative` (chart_source), `news` (news_items).
 - **Observability read path** — Dagster ELT (SQLite → DuckDB) + dbt marts; same pattern scales to Postgres → Snowflake without changing downstream models
 - **dbt test results** — written directly to DuckDB by `dbt_test_runner` (Dagster process owns the write connection; no SQLite hop needed)
 - **Eval tagging** — `eval_runner.py` prefixes `request_id` with `eval_{fixture_id}_` so fixture runs are queryable alongside prod traffic in all observability marts
+- **Pattern promotion workflow** — `just eval-go → just eval-load-results → just promote-patterns` → review `pattern_candidates.yaml` → fill `example_sql` → manually move to `learned_patterns.yaml`. Agent code never auto-writes `learned_patterns.yaml`.
+- **KPI targets** — `src/observability/kpis.py` defines 5 KPIs (eval pass rate, fallback rate, first-attempt SQL rate, P95 latency, pattern coverage). `evaluate_kpis(conn)` queries observability marts; `just kpis` prints the dashboard. Dagster `kpi_health_check` emits WARN when any KPI is below target.
 - **EnvVar()** for all secrets in Dagster resources
 
 ## Data Architecture (Kimball Dimensional Model)

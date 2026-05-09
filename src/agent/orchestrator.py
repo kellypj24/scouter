@@ -23,6 +23,7 @@ from src.agent.prompts.orchestrator import SYSTEM, USER
 from src.agent.providers.base import LLMError, LLMProvider
 from src.agent.query_agent import _FALLBACK_SQL, QueryAgent
 from src.models.agent import AgentRequest, AgentResponse
+from src.models.request_state import RequestState
 from src.models.response import NarrativeBlock, QueryResult
 from src.observability.context import request_id_var
 from src.observability.logger import get_obs_logger
@@ -69,16 +70,17 @@ class Orchestrator:
             AgentResponse with one NarrativeBlock per sub-question.
         """
         obs = get_obs_logger()
-        rid = request_id_var.get()
-        t0 = time.perf_counter()
-        domains = self._query_agent.classify_domains(request.question)
-        domain_str = ",".join(domains) if domains else "all"
-        await obs.start_request(rid, request.question, domain=domain_str)
+        state = RequestState(
+            request_id=request_id_var.get(),
+            original_question=request.question,
+            classification=self._query_agent.classify_domains(request.question),
+        )
+        await obs.start_request(state.request_id, state.original_question, domain=state.domain_str)
 
-        sub_questions = await self._decompose(request.question, request.max_blocks)
+        state.sub_questions = await self._decompose(request.question, request.max_blocks)
 
         blocks: list[NarrativeBlock] = []
-        for question in sub_questions:
+        for question in state.sub_questions:
             block = await self._run_block(question)
             blocks.append(block)
 
@@ -91,8 +93,7 @@ class Orchestrator:
                 blocks = populated
 
         fallback_used = any(b.query_result.sql == _FALLBACK_SQL for b in blocks)
-        latency_ms = int((time.perf_counter() - t0) * 1000)
-        await obs.finish_request(rid, len(blocks), fallback_used, latency_ms)
+        await obs.finish_request(state.request_id, len(blocks), fallback_used, state.elapsed_ms)
         return AgentResponse(blocks=blocks, fallback_used=fallback_used)
 
     async def stream(self, request: AgentRequest) -> AsyncGenerator[NarrativeBlock]:
@@ -109,24 +110,24 @@ class Orchestrator:
             NarrativeBlock for each sub-question, in order.
         """
         obs = get_obs_logger()
-        rid = request_id_var.get()
-        t0 = time.perf_counter()
-        domains = self._query_agent.classify_domains(request.question)
-        domain_str = ",".join(domains) if domains else "all"
-        await obs.start_request(rid, request.question, domain=domain_str)
+        state = RequestState(
+            request_id=request_id_var.get(),
+            original_question=request.question,
+            classification=self._query_agent.classify_domains(request.question),
+        )
+        await obs.start_request(state.request_id, state.original_question, domain=state.domain_str)
 
-        sub_questions = await self._decompose(request.question, request.max_blocks)
+        state.sub_questions = await self._decompose(request.question, request.max_blocks)
         blocks_yielded = 0
         fallback_used = False
-        for question in sub_questions:
+        for question in state.sub_questions:
             block = await self._run_block(question)
             if block.query_result.sql == _FALLBACK_SQL:
                 fallback_used = True
             blocks_yielded += 1
             yield block
 
-        latency_ms = int((time.perf_counter() - t0) * 1000)
-        await obs.finish_request(rid, blocks_yielded, fallback_used, latency_ms)
+        await obs.finish_request(state.request_id, blocks_yielded, fallback_used, state.elapsed_ms)
 
     async def _decompose(self, question: str, max_blocks: int) -> list[str]:
         """Break a question into focused sub-questions via the LLM.

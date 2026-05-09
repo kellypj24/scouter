@@ -120,7 +120,8 @@ All sensors start in `RUNNING` status so they activate as soon as `just pipeline
 `learned_patterns.yaml` in the project root holds Claude-curated few-shot SQL examples. These are injected into every SQL generation prompt (after the schema block) to reduce hallucination on known-good query shapes.
 
 - **Read path**: `src/data/context.py` loads and caches the file at startup; `get_schema_prompt()` appends the relevant domain's examples
-- **Write path**: Claude (developer agent) only — local Scouter agent never writes this file
+- **Write path**: human review only — agent code never writes this file
+- **Promotion workflow**: `just eval-go` → `just eval-load-results` → `just promote-patterns` surfaces consistently-failing fixtures as entries in `pattern_candidates.yaml` (gitignored). Review candidates, fill in `example_sql`, then manually move the entry to `learned_patterns.yaml`.
 - **Refresh path**: `dbt_docs_sensor` → `dbt_docs_generate` keeps `catalog.json` current so the schema injector always has column statistics alongside the few-shot examples
 
 ## Observability
@@ -132,7 +133,7 @@ Every request through the FastAPI service is instrumented end-to-end. Telemetry 
 | Stage | Metrics |
 |-------|---------|
 | Request | question, domain, total latency, block count, fallback used |
-| `sql_gen` | per-attempt latency, success/failure, error message, SQL length |
+| `sql_gen` | per-attempt latency, success/failure, error message, SQL length, domain confidence |
 | `sql_exec` | latency, row count returned |
 | `narrative` | latency, success/failure, chart source (llm / inferred / none) |
 | `news` | latency, items fetched, success/failure |
@@ -164,6 +165,24 @@ Scouter request telemetry is synced by `obs_log_sensor` when the log file change
 ### Eval fixture observability
 
 Every `just eval-go` run tags each fixture's requests in the observability database with `eval_{fixture_id}_...` as the `request_id`. This means you can query `mart_fallback_analysis` or `mart_request_metrics` filtered to eval runs to see exactly which fixtures are driving fallbacks, SQL retries, or slow latency — the direct data feed for answer quality improvement decisions.
+
+### KPI dashboard
+
+`src/observability/kpis.py` defines five targets against the observability marts:
+
+| KPI | Target |
+|-----|--------|
+| eval_pass_rate | ≥ 100% |
+| fallback_rate | ≤ 10% |
+| first_attempt_sql_rate | ≥ 80% |
+| p95_request_latency_ms | ≤ 30s |
+| pattern_coverage | ≥ 100% of failing fixture domains have a learned pattern |
+
+```bash
+just kpis   # prints current vs target for all five
+```
+
+The Dagster `kpi_health_check` asset check also evaluates these after each `observability_sync` and emits a WARN in the Dagster UI when any KPI is below target.
 
 ## Development
 
