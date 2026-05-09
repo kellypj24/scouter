@@ -71,8 +71,8 @@ class Orchestrator:
         obs = get_obs_logger()
         rid = request_id_var.get()
         t0 = time.perf_counter()
-        domains = self._query_agent.classify_domains(request.question)
-        domain_str = ",".join(domains) if domains else "all"
+        classification = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(classification.domains) if classification.domains else "all"
         await obs.start_request(rid, request.question, domain=domain_str)
 
         sub_questions = await self._decompose(request.question, request.max_blocks)
@@ -111,8 +111,8 @@ class Orchestrator:
         obs = get_obs_logger()
         rid = request_id_var.get()
         t0 = time.perf_counter()
-        domains = self._query_agent.classify_domains(request.question)
-        domain_str = ",".join(domains) if domains else "all"
+        classification = self._query_agent.classify_domains(request.question)
+        domain_str = ",".join(classification.domains) if classification.domains else "all"
         await obs.start_request(rid, request.question, domain=domain_str)
 
         sub_questions = await self._decompose(request.question, request.max_blocks)
