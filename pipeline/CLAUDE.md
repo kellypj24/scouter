@@ -22,3 +22,11 @@ The Dagster `DuckDBResource` is the only write connection to the main DuckDB dat
 ## dbt test results
 
 `dbt_test_runner` writes results directly to DuckDB (no SQLite hop). The Dagster process owns the write connection so this is safe. Do not route dbt test output through `src/observability/`.
+
+## pattern_promotion asset
+
+`pipeline/assets/pattern_promotion.py` runs `scripts/promote_patterns.py` as a subprocess after each `observability_sync`. It writes to `pattern_candidates.yaml` (gitignored) — never to `learned_patterns.yaml`. It is safe to re-run; existing `promoted` entries are preserved.
+
+## kpi_health_check
+
+`pipeline/checks/kpi_health.py` defines an `@asset_check` on `observability_sync` that calls `src/observability/kpis.py:evaluate_kpis()`. It opens a **read-only** DuckDB connection — it does not use the `DuckDBResource`. Severity is WARN (not ERROR) so a below-target KPI surfaces in the UI without blocking the pipeline.

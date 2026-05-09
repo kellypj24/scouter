@@ -19,3 +19,11 @@ await obs.log_span(...)
 ## SQLite only
 
 This layer writes to SQLite (`logs/scouter_logs.db`) via WAL mode. Do not add DuckDB writes here — that's the Dagster ELT job's responsibility. Keeping the write path simple means logging can never deadlock with the pipeline.
+
+## kpis.py is read-only
+
+`kpis.py` is the exception to the SQLite-only rule — it reads from DuckDB observability marts to compute KPI values. It never writes. Use a read-only connection: `duckdb.connect(path, read_only=True)`.
+
+## domain_confidence on sql_gen spans
+
+`ObservabilityLogger.log_span()` accepts `domain_confidence: float` as a metadata kwarg for `sql_gen` spans. It is populated by `QueryAgent.run()` from `DomainClassification.confidence`. Pass it alongside `domain` when logging SQL generation.
