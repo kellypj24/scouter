@@ -97,9 +97,13 @@ class TestFindConsistentFailures:
         conn = duckdb.connect(":memory:")
         _seed_eval_runs(conn)
         # 3 distinct run_at values; "bad_fixture" fails in 2 of 3
-        _insert_run(conn, "bad_fixture", "2026-05-01T10:00:00Z", passed=False, failures=["min_rows"])
+        _insert_run(
+            conn, "bad_fixture", "2026-05-01T10:00:00Z", passed=False, failures=["min_rows"]
+        )
         _insert_run(conn, "bad_fixture", "2026-05-02T10:00:00Z", passed=True)
-        _insert_run(conn, "bad_fixture", "2026-05-03T10:00:00Z", passed=False, failures=["chart_type"])
+        _insert_run(
+            conn, "bad_fixture", "2026-05-03T10:00:00Z", passed=False, failures=["chart_type"]
+        )
 
         results = find_consistent_failures(conn)
         fixture_ids = [r["fixture_id"] for r in results]

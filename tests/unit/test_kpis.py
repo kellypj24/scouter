@@ -45,9 +45,7 @@ def _make_conn() -> duckdb.DuckDBPyConnection:
 
 def _seed_eval_runs(conn: duckdb.DuckDBPyConnection, rows: list[tuple]) -> None:
     """Insert rows into mart_eval_runs. Tuple: (fixture_id, run_at, passed, sql_attempts, domain)."""
-    conn.executemany(
-        "INSERT INTO main_observability.mart_eval_runs VALUES (?, ?, ?, ?, ?)", rows
-    )
+    conn.executemany("INSERT INTO main_observability.mart_eval_runs VALUES (?, ?, ?, ?, ?)", rows)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +89,16 @@ class TestEvaluateKpisStructure:
     def test_each_result_has_required_keys(self):
         conn = _make_conn()
         results = evaluate_kpis(conn)
-        required = {"name", "description", "target", "current", "passing", "direction", "unit", "error"}
+        required = {
+            "name",
+            "description",
+            "target",
+            "current",
+            "passing",
+            "direction",
+            "unit",
+            "error",
+        }
         for r in results:
             assert required <= r.keys()
 
@@ -111,10 +118,13 @@ class TestEvaluateKpisStructure:
 class TestEvalPassRate:
     def test_all_passing(self):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
-            ("fix_b", "2026-05-09 10:00:00", True, 1, "sector"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
+                ("fix_b", "2026-05-09 10:00:00", True, 1, "sector"),
+            ],
+        )
         results = evaluate_kpis(conn)
         kpi = next(r for r in results if r["name"] == "eval_pass_rate")
         assert kpi["current"] == pytest.approx(1.0)
@@ -122,10 +132,13 @@ class TestEvalPassRate:
 
     def test_partial_passing(self):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
-            ("fix_b", "2026-05-09 10:00:00", False, 2, "sector"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
+                ("fix_b", "2026-05-09 10:00:00", False, 2, "sector"),
+            ],
+        )
         results = evaluate_kpis(conn)
         kpi = next(r for r in results if r["name"] == "eval_pass_rate")
         assert kpi["current"] == pytest.approx(0.5)
@@ -175,10 +188,13 @@ class TestFallbackRate:
 class TestFirstAttemptSqlRate:
     def test_all_first_attempt(self):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
-            ("fix_b", "2026-05-09 10:00:00", True, 1, "sector"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
+                ("fix_b", "2026-05-09 10:00:00", True, 1, "sector"),
+            ],
+        )
         results = evaluate_kpis(conn)
         kpi = next(r for r in results if r["name"] == "first_attempt_sql_rate")
         assert kpi["current"] == pytest.approx(1.0)
@@ -186,10 +202,13 @@ class TestFirstAttemptSqlRate:
 
     def test_half_first_attempt(self):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
-            ("fix_b", "2026-05-09 10:00:00", False, 2, "sector"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
+                ("fix_b", "2026-05-09 10:00:00", False, 2, "sector"),
+            ],
+        )
         results = evaluate_kpis(conn)
         kpi = next(r for r in results if r["name"] == "first_attempt_sql_rate")
         assert kpi["current"] == pytest.approx(0.5)
@@ -204,9 +223,12 @@ class TestFirstAttemptSqlRate:
 class TestPatternCoverage:
     def test_no_failures_returns_full_coverage(self):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", True, 1, "equity"),
+            ],
+        )
         results = evaluate_kpis(conn)
         kpi = next(r for r in results if r["name"] == "pattern_coverage")
         assert kpi["current"] == pytest.approx(1.0)
@@ -214,9 +236,12 @@ class TestPatternCoverage:
 
     def test_missing_patterns_file_returns_zero(self, tmp_path: Path):
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", False, 2, "equity"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", False, 2, "equity"),
+            ],
+        )
         results = evaluate_kpis(conn, patterns_file=tmp_path / "nonexistent.yaml")
         kpi = next(r for r in results if r["name"] == "pattern_coverage")
         assert kpi["current"] == pytest.approx(0.0)
@@ -226,9 +251,12 @@ class TestPatternCoverage:
         pf = tmp_path / "patterns.yaml"
         pf.write_text("patterns:\n  - id: p1\n    domain: equity\n    example_sql: SELECT 1\n")
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", False, 2, "equity"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", False, 2, "equity"),
+            ],
+        )
         results = evaluate_kpis(conn, patterns_file=pf)
         kpi = next(r for r in results if r["name"] == "pattern_coverage")
         assert kpi["current"] == pytest.approx(1.0)
@@ -238,9 +266,12 @@ class TestPatternCoverage:
         pf = tmp_path / "patterns.yaml"
         pf.write_text("patterns:\n  - id: p1\n    domain: equity\n    example_sql: SELECT 1\n")
         conn = _make_conn()
-        _seed_eval_runs(conn, [
-            ("fix_a", "2026-05-09 10:00:00", False, 2, "sector"),
-        ])
+        _seed_eval_runs(
+            conn,
+            [
+                ("fix_a", "2026-05-09 10:00:00", False, 2, "sector"),
+            ],
+        )
         results = evaluate_kpis(conn, patterns_file=pf)
         kpi = next(r for r in results if r["name"] == "pattern_coverage")
         assert kpi["current"] == pytest.approx(0.0)
