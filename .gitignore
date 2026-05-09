@@ -59,3 +59,6 @@ Thumbs.db
 eval/scouter-eval
 eval/eval
 gateway/scouter-gateway
+
+# Pattern promotion inbox (machine-generated; promoted entries go to learned_patterns.yaml)
+pattern_candidates.yaml

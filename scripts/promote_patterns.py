@@ -1,0 +1,252 @@
+"""Surface eval fixture failures as pattern candidates for human review.
+
+Reads mart_eval_runs from DuckDB, identifies fixtures that have failed
+consistently (>=2 of the last 3 eval runs), and writes candidate entries
+to pattern_candidates.yaml for human review.
+
+The script NEVER writes to learned_patterns.yaml. Human review is the
+gate — pattern_candidates.yaml is the inbox; learned_patterns.yaml is
+the promoted set.
+
+Usage:
+    uv run python scripts/promote_patterns.py
+    uv run python scripts/promote_patterns.py --db data/scouter.duckdb
+    uv run python scripts/promote_patterns.py --output pattern_candidates.yaml
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import date
+from pathlib import Path
+
+import duckdb
+import yaml
+
+_DEFAULT_DB = Path("data/scouter.duckdb")
+_DEFAULT_OUTPUT = Path("pattern_candidates.yaml")
+
+# Map fixture_id prefixes to domain strings.
+_PREFIX_DOMAIN: list[tuple[str, str]] = [
+    ("screener_", "equity"),
+    ("timeseries_", "equity"),
+    ("multistock_", "equity"),
+    ("moving_avg_", "equity"),
+    ("equity_", "equity"),
+    ("sector_", "sector"),
+    ("risk_", "risk"),
+    ("drawdown_", "risk"),
+    ("unanswerable_", "all"),
+]
+
+
+def infer_domain(fixture_id: str) -> str:
+    """Return domain string for a fixture based on its ID prefix."""
+    for prefix, domain in _PREFIX_DOMAIN:
+        if fixture_id.startswith(prefix):
+            return domain
+    return "all"
+
+
+def find_consistent_failures(conn: duckdb.DuckDBPyConnection) -> list[dict]:
+    """Return fixtures failing in >=2 of the last 3 eval run_at timestamps.
+
+    Args:
+        conn: Open DuckDB connection pointing at the analytical store.
+
+    Returns:
+        List of dicts with keys: fixture_id, fail_count, last_failures.
+    """
+    try:
+        rows = conn.execute("""
+            WITH last_three_runs AS (
+                SELECT DISTINCT run_at
+                FROM main_observability.mart_eval_runs
+                ORDER BY run_at DESC
+                LIMIT 3
+            ),
+            recent AS (
+                SELECT fixture_id, passed, failures
+                FROM main_observability.mart_eval_runs
+                WHERE run_at IN (SELECT run_at FROM last_three_runs)
+            )
+            SELECT
+                fixture_id,
+                COUNT(*) FILTER (WHERE NOT passed) AS fail_count,
+                (ARRAY_AGG(failures ORDER BY fixture_id))[1] AS last_failures
+            FROM recent
+            GROUP BY fixture_id
+            HAVING COUNT(*) FILTER (WHERE NOT passed) >= 2
+            ORDER BY fail_count DESC, fixture_id
+        """).fetchall()
+    except duckdb.CatalogException:
+        return []
+
+    return [
+        {
+            "fixture_id": row[0],
+            "fail_count": row[1],
+            "last_failures": row[2] or [],
+        }
+        for row in rows
+    ]
+
+
+def load_existing_candidates(path: Path) -> dict:
+    """Load pattern_candidates.yaml if it exists.
+
+    Returns:
+        Dict with 'version' and 'candidates' keys.
+    """
+    if not path.exists():
+        return {"version": 1, "candidates": []}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+        return {
+            "version": data.get("version", 1),
+            "candidates": data.get("candidates", []),
+        }
+    except Exception:
+        return {"version": 1, "candidates": []}
+
+
+def write_candidates(
+    path: Path,
+    new_candidates: list[dict],
+    existing: dict,
+) -> int:
+    """Merge new candidates into existing, preserving promoted entries.
+
+    Existing 'promoted' entries are never touched. Existing 'pending_review'
+    entries for the same source_fixture are updated. New fixtures get a new
+    entry.
+
+    Args:
+        path: Output path for pattern_candidates.yaml.
+        new_candidates: Candidates generated from this run.
+        existing: Previously loaded candidates dict.
+
+    Returns:
+        Number of candidates written (new + updated).
+    """
+    promoted = [c for c in existing["candidates"] if c.get("status") == "promoted"]
+    promoted_fixtures = {c["source_fixture"] for c in promoted}
+
+    # Build index of new candidates by fixture_id
+    new_by_fixture = {c["source_fixture"]: c for c in new_candidates}
+
+    # Existing pending entries that are NOT in the new set stay as-is
+    kept_pending = [
+        c for c in existing["candidates"]
+        if c.get("status") == "pending_review"
+        and c["source_fixture"] not in new_by_fixture
+    ]
+
+    # New / updated pending entries (skip anything already promoted)
+    updated_pending = [
+        c for c in new_candidates
+        if c["source_fixture"] not in promoted_fixtures
+    ]
+
+    final_candidates = promoted + kept_pending + updated_pending
+
+    output = {
+        "version": existing["version"],
+        "_note": (
+            "Auto-generated by scripts/promote_patterns.py. "
+            "Entries with status: pending_review require human review. "
+            "Edit example_sql, then move the entry to learned_patterns.yaml. "
+            "NEVER edit this file's promoted entries — they are for audit only."
+        ),
+        "candidates": final_candidates,
+    }
+
+    path.write_text(yaml.dump(output, default_flow_style=False, sort_keys=False, allow_unicode=True))
+    return len(updated_pending)
+
+
+def _format_candidate(failure: dict) -> dict:
+    """Format a failure dict into a pattern_candidates.yaml entry."""
+    fixture_id = failure["fixture_id"]
+    failures = failure["last_failures"]
+    if isinstance(failures, str):
+        import json
+        try:
+            failures = json.loads(failures)
+        except Exception:
+            failures = [failures] if failures else []
+
+    return {
+        "id": f"candidate_{fixture_id}",
+        "source_fixture": fixture_id,
+        "domain": infer_domain(fixture_id),
+        "status": "pending_review",
+        "fail_count": failure["fail_count"],
+        "failure_reasons": failures,
+        "example_sql": "",
+        "notes": (
+            f"Auto-generated from {fixture_id} failing in >={failure['fail_count']} of last 3 "
+            "eval runs. Query main_observability.mart_eval_runs for context, then fill in "
+            "example_sql and move to learned_patterns.yaml when ready."
+        ),
+        "generated_at": date.today().isoformat(),
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Surface eval failures as pattern candidates.")
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=_DEFAULT_DB,
+        help="Path to scouter.duckdb (default: data/scouter.duckdb)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=_DEFAULT_OUTPUT,
+        help="Output path for pattern_candidates.yaml (default: pattern_candidates.yaml)",
+    )
+    args = parser.parse_args(argv)
+
+    if not args.db.exists():
+        print(
+            f"DuckDB not found at {args.db}. "
+            "Run the Dagster pipeline first to populate the analytical store."
+        )
+        return 1
+
+    try:
+        conn = duckdb.connect(str(args.db), read_only=True)
+    except Exception as exc:
+        print(f"Could not connect to DuckDB: {exc}")
+        return 1
+
+    try:
+        failures = find_consistent_failures(conn)
+    finally:
+        conn.close()
+
+    if not failures:
+        print("No consistent failures found in last 3 eval runs. Nothing to promote.")
+        return 0
+
+    new_candidates = [_format_candidate(f) for f in failures]
+    existing = load_existing_candidates(args.output)
+    written = write_candidates(args.output, new_candidates, existing)
+
+    print(
+        f"Wrote {written} candidate(s) to {args.output} "
+        f"({len(failures)} consistent failure(s) found)."
+    )
+    if written > 0:
+        print(
+            "Next steps: review each entry in pattern_candidates.yaml, "
+            "fill in example_sql, then copy to learned_patterns.yaml."
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
