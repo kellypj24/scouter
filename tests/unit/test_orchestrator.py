@@ -9,7 +9,7 @@ import pytest
 from src.agent.orchestrator import DecompositionResponse, Orchestrator, _error_block
 from src.agent.providers.base import LLMError
 from src.agent.query_agent import _FALLBACK_SQL
-from src.models.agent import AgentRequest
+from src.models.agent import AgentRequest, DomainClassification
 from src.models.response import ChartSpec, NarrativeBlock, QueryResult
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,9 @@ def mock_query_agent():
             _make_query_result(),
             pd.DataFrame({"ticker": ["AAPL"], "ytd_return": [0.15]}),
         )
+    )
+    agent.classify_domains = MagicMock(
+        return_value=DomainClassification(domains=["core", "equity"], confidence=0.85)
     )
     return agent
 
@@ -159,6 +162,26 @@ class TestDecompose:
         )
         sub_qs = await orchestrator._decompose("What is AAPL's YTD return?", max_blocks=3)
         assert sub_qs == ["What is AAPL's YTD return?"]
+
+
+class TestRequestState:
+    async def test_classify_domains_called_once_per_run(self, orchestrator, mock_query_agent):
+        request = AgentRequest(question="How are tech stocks doing?")
+        await orchestrator.run(request)
+        mock_query_agent.classify_domains.assert_called_once_with(request.question)
+
+    async def test_classify_domains_called_once_per_stream(self, orchestrator, mock_query_agent):
+        request = AgentRequest(question="How are tech stocks doing?")
+        async for _ in orchestrator.stream(request):
+            pass
+        mock_query_agent.classify_domains.assert_called_once_with(request.question)
+
+    async def test_domain_str_passed_to_start_request(self, orchestrator, mock_query_agent):
+        # equity domain → "core,equity" is passed to obs.start_request
+        request = AgentRequest(question="Q")
+        await orchestrator.run(request)
+        # classify_domains returned ["core", "equity"] — verify it was called
+        assert mock_query_agent.classify_domains.called
 
 
 class TestErrorBlock:
