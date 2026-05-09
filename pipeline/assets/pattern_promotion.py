@@ -34,7 +34,7 @@ _OUTPUT = _PROJECT_ROOT / "pattern_candidates.yaml"
         "Never modifies learned_patterns.yaml."
     ),
 )
-def pattern_promotion(context: AssetExecutionContext) -> MaterializeResult:
+def pattern_promotion(context: AssetExecutionContext) -> MaterializeResult[None]:
     """Run promote_patterns.py and report candidate count.
 
     Args:
