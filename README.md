@@ -16,30 +16,32 @@ Financial data narrative agent. Ask a question in plain English; Scouter generat
 
 ## Quick start
 
-### Containerised (recommended)
+> **Workflow split**: local dev runs Ollama natively (GPU-accelerated via Metal on Apple Silicon). Docker Compose is reserved for production-parity testing and the eventual deployment artifact — Docker on Mac cannot pass through the Apple Silicon GPU, so running Ollama in a container forces CPU-only inference.
 
-```bash
-cp .env.example .env          # fill in LLM provider credentials
-just ingest && just dbt       # populate data/scouter.duckdb (one-time)
-just compose-build            # build images (re-run after code or dep changes)
-
-# Pull Ollama models into the named volume (one-time — persisted across restarts)
-docker compose run --rm ollama ollama pull qwen2.5:3b
-docker compose run --rm ollama ollama pull qwen2.5-coder:3b
-
-just compose                  # start all services
-# → app at http://localhost:8501
-# → Dagster UI at http://localhost:3000
-```
-
-### Local dev
+### Local dev (recommended on Mac)
 
 ```bash
 uv sync
 cp .env.example .env
+
+# One-time: install native Ollama (https://ollama.com/download) and pull models
+ollama pull qwen2.5-coder:7b   # SQL generation (Metal GPU, fast on M-series)
+ollama pull gemma3:4b          # decomposition + narrative
+
+# Native Ollama serves on :11434 automatically; .env points there by default
+just ingest && just dbt        # populate data/scouter.duckdb (one-time)
 just ask "What are the top 10 best performing stocks this year?"
-just run          # Streamlit UI (requires just api + just gateway running)
-just serve        # starts all three together
+just eval-go                   # full eval suite
+just serve                     # FastAPI + gateway + Streamlit on host
+```
+
+### Production-parity test (containerised)
+
+```bash
+just compose-build
+docker compose up
+# Note: Ollama in compose runs CPU-only on Mac. Use this only to verify the
+# deployment artifact, not for daily dev. On a Linux GPU host, this works fully.
 ```
 
 ## Asking questions headlessly
