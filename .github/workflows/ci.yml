@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [main]
 
+  # Post-merge backstop. A squash-merge can land before PR checks finish,
+  # so main is re-verified on every push.
+  push:
+    branches: [main]
+
 permissions:
   contents: read
   pull-requests: write
@@ -64,7 +69,16 @@ jobs:
         id: resolve-tests
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: uv run python scripts/ci_test_resolver.py
+        run: |
+          # On push there is no PR base to diff against (github.base_ref is
+          # empty), so diff-based targeting cannot work. Run the full suite
+          # with the coverage floor enforced — that is the point of a backstop.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "run_full=true" >> "$GITHUB_OUTPUT"
+            echo "test_files=" >> "$GITHUB_OUTPUT"
+          else
+            uv run python scripts/ci_test_resolver.py
+          fi
 
       - name: Run tests
         run: |
@@ -112,6 +126,10 @@ jobs:
   staleness:
     name: Docs & Test Coverage Gaps
     runs-on: ubuntu-latest
+    # PR-only gate: it asks "did docs accompany this change?", which is a
+    # review-time question. It also diffs against the PR base, which does
+    # not exist on push.
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
