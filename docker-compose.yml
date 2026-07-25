@@ -7,8 +7,8 @@
 #   cp .env.example .env        # and fill in LLM provider credentials
 #   just ingest && just dbt     # populate data/scouter.duckdb before first run
 #   # Pull Ollama models on first run (one-time, persisted in ollama_data volume):
-#   docker compose run --rm ollama ollama pull qwen2.5:3b
-#   docker compose run --rm ollama ollama pull qwen2.5-coder:3b
+#   docker compose run --rm ollama ollama pull llama3.2:3b
+#   docker compose run --rm ollama ollama pull granite-code:3b
 #
 # Usage:
 #   docker compose up           # start all services

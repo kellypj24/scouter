@@ -9,7 +9,7 @@ Every provider must implement `LLMProvider` as defined in `base.py`. Both method
 - Must validate response against the Pydantic schema before returning
 - Raise `LLMValidationError` (not a bare exception) if parsing fails
 - Anthropic and Bedrock use `tool_use` to force structured output — do not switch to JSON mode
-- Ollama uses JSON mode + prompt injection (tool_use support is unreliable for qwen2.5)
+- Ollama uses JSON mode + prompt injection (tool_use support is unreliable for the local models)
 
 ## Error hierarchy
 

@@ -25,7 +25,7 @@ uv sync
 cp .env.example .env
 
 # One-time: install native Ollama (https://ollama.com/download) and pull models
-ollama pull qwen2.5-coder:7b   # SQL generation (Metal GPU, fast on M-series)
+ollama pull granite-code:3b    # SQL generation (Metal GPU, fast on M-series)
 ollama pull gemma3:4b          # decomposition + narrative
 
 # Native Ollama serves on :11434 automatically; .env points there by default

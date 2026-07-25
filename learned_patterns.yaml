@@ -144,10 +144,51 @@ patterns:
       ORDER BY date DESC, sector_daily_return_ew DESC
     notes: >
       Sector daily return leaders — use mart_sector_rotation (has date column and
-      sector_daily_return_ew). Never use mart_equity_screener for sector-level daily
-      returns — it has no date column and returns individual stocks, not sectors.
+      sector_daily_return_ew). Return DETAIL rows (one per sector per day), NEVER
+      an aggregate like MAX(sector_daily_return_ew) — the user wants to see each
+      sector's return, not a single number. Always include sector in SELECT so
+      charts can render with sector on the axis. Never use mart_equity_screener
+      for sector-level daily returns — it has no date column and returns individual
+      stocks, not sectors.
     promoted_by: claude
     promoted_at: "2026-05-04"
+
+  - id: sector_drawdown_avg
+    domain: sector
+    question_type: aggregation
+    mart: mart_risk_profile
+    example_sql: |
+      SELECT sector,
+             AVG(drawdown_from_52w_high) AS avg_drawdown,
+             MIN(drawdown_from_52w_high) AS worst_drawdown,
+             COUNT(*)                    AS stock_count
+      FROM main_risk.mart_risk_profile
+      GROUP BY sector
+      ORDER BY avg_drawdown ASC
+    notes: >
+      Sector-aggregated drawdown — use mart_risk_profile (per-stock with sector +
+      drawdown_from_52w_high) and GROUP BY sector. NEVER pull avg_drawdown_from_52w_high
+      from mart_sector_fundamentals as a single column — it exists there but you need
+      sector in the SELECT for the chart to render. ALWAYS include sector in SELECT.
+    promoted_by: claude
+    promoted_at: "2026-05-10"
+
+  - id: sector_cumulative_trend
+    domain: sector
+    question_type: time_series
+    mart: mart_sector_rotation
+    example_sql: |
+      SELECT sector, date, sector_cumulative_return_ew
+      FROM main_sector.mart_sector_rotation
+      WHERE date >= CURRENT_DATE - INTERVAL '3' MONTH
+      ORDER BY date ASC, sector
+    notes: >
+      Cumulative return trend across sectors — mart_sector_rotation has the per-day
+      per-sector grain. ALWAYS include sector in SELECT (not just date and the metric)
+      so the chart can use sector as the color dimension. Without sector, the chart
+      renders as a single tangled line.
+    promoted_by: claude
+    promoted_at: "2026-05-10"
 
   - id: sector_market_cap_snapshot
     domain: sector
@@ -175,7 +216,12 @@ patterns:
       FROM main_sector.mart_sector_rotation
       ORDER BY date DESC, sector_ytd_return DESC
       LIMIT 11
-    notes: Cross-sector YTD return — use sector_ytd_return (not ytd_return), order by latest date first
+    notes: >
+      Cross-sector YTD return ranking — ALWAYS use mart_sector_rotation.sector_ytd_return.
+      NEVER use mart_sector_fundamentals.avg_ytd_return_ew for this — fundamentals is a
+      snapshot mart for market-cap and stock-count ranking, not return ranking. ALWAYS
+      include sector in SELECT (not just the metric) so the chart can render bars by
+      sector. Use sector_ytd_return (not ytd_return).
     promoted_by: claude
     promoted_at: "2026-05-02"
 
@@ -202,6 +248,22 @@ patterns:
       ticker, then order by cumulative_drawdown_days. Never GROUP BY — use QUALIFY instead.
     promoted_by: claude
     promoted_at: "2026-05-04"
+
+  - id: risk_sharpe_vs_volatility
+    domain: risk
+    question_type: scatter
+    mart: mart_risk_profile
+    example_sql: |
+      SELECT ticker, company_name, sector, volatility_20d, sharpe_20d
+      FROM main_risk.mart_risk_profile
+      ORDER BY sharpe_20d DESC
+    notes: >
+      Sharpe vs volatility scatter / screener — the column is sharpe_20d (NOT
+      sharpe_ratio, which does NOT exist in any mart). The volatility column is
+      volatility_20d. Include sector so the chart can color points by sector.
+      Use mart_risk_profile (not mart_equity_screener) for risk/return analysis.
+    promoted_by: claude
+    promoted_at: "2026-05-10"
 
   - id: drawdown_grouped_by_sector
     domain: risk

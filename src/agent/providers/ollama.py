@@ -1,8 +1,8 @@
 """Ollama provider — local LLM for PoC.
 
 Routes by task:
-  SQL generation  → OLLAMA_SQL_MODEL   (default: codellama)
-  Narrative prose → OLLAMA_MODEL       (default: llama3.2)
+  SQL generation  → OLLAMA_SQL_MODEL   (default: granite-code:3b)
+  Narrative prose → OLLAMA_MODEL       (default: llama3.2:3b)
 
 This lets us squeeze maximum quality out of local inference by using
 the right model for each task without changing any harness code.
@@ -23,8 +23,8 @@ from src.agent.providers.base import (
 )
 
 DEFAULT_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "qwen2.5:3b"
-DEFAULT_SQL_MODEL = "qwen2.5-coder:3b"
+DEFAULT_MODEL = "llama3.2:3b"
+DEFAULT_SQL_MODEL = "granite-code:3b"
 DEFAULT_TIMEOUT = 60
 MAX_RETRIES = 3
 
