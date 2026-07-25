@@ -130,7 +130,13 @@ Error message points to valid qualified table names so the retry has actionable 
 
 ## Local model ceiling analysis
 
-**Model**: `qwen2.5-coder:3b` via Ollama (SQL), `llama3.2:3b` (narrative)
+> **HISTORICAL (superseded 2026-07-25).** This section records failures measured against
+> `qwen2.5-coder`, which has since been removed from the project. The fixture-level root
+> causes below are retained because the *guards and learned patterns they justify* are still
+> in the codebase — but the pass/fail numbers no longer describe the current default SQL
+> model. See the "Local model capability ceiling" section in `CLAUDE.md` for current results.
+
+**Model (historical)**: `qwen2.5-coder:3b` via Ollama (SQL), `llama3.2:3b` (narrative)
 
 ### Failures and root causes
 

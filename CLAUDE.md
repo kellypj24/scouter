@@ -87,14 +87,17 @@ Three distinct runtimes — keep them separate:
 **Local development uses native Ollama (GPU-accelerated via Metal on Apple Silicon).** Docker on Mac cannot pass through the Metal GPU, so running Ollama in a container forces CPU-only inference at 10–60x slower than native and saturates all cores. The `docker-compose.yml` Ollama service is preserved for prod parity and Linux GPU hosts only — do NOT start it for daily dev.
 
 - Native Ollama serves on `localhost:11434` (default install). The `.env` `OLLAMA_HOST` points there.
-- Default models for local: `OLLAMA_SQL_MODEL=qwen2.5-coder:7b`, `OLLAMA_MODEL=gemma3:4b`. The 7b runs comfortably on M-series GPU; on CPU it cooks the machine.
-- Pull via `ollama pull qwen2.5-coder:7b` (host CLI), not via `docker compose run ollama`.
+- Default models for local: `OLLAMA_SQL_MODEL=granite-code:3b`, `OLLAMA_MODEL=gemma3:4b`. Both run comfortably on M-series GPU; on CPU they cook the machine.
+- Pull via `ollama pull granite-code:3b` (host CLI), not via `docker compose run ollama`.
+- **Model provenance constraint**: this project uses US-origin open weights only (Google Gemma/CodeGemma, Meta Llama, IBM Granite). Do not pull Qwen, DeepSeek, GLM, Yi, or other Chinese-origin models.
 - For prod-parity test: `docker compose up` — accept that it'll be slower on a Mac and use only to verify the deployment artifact.
 
 ## Local model capability ceiling
 
-`qwen2.5-coder:7b` (current default SQL model) clears most fixtures that the older
-`qwen2.5-coder:3b` baseline missed. Claude Sonnet/Opus via the Anthropic provider remains
+`granite-code:3b` is the current default SQL model. The analysis below was gathered on the
+former `qwen2.5-coder` models (since removed from this machine — see provenance constraint
+above) and is retained because the failure *modes* generalize to any small local model.
+Claude Sonnet/Opus via the Anthropic provider remains
 the upper bound for any residual failures. This section documents the historical failure
 modes (observed on the 3b model) and the compensating controls already in place.
 
