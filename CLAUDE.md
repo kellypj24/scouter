@@ -12,13 +12,7 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 
 ## Current Status
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Data Layer + Query Agent | Complete |
-| 2 | Narrative Agent + Visualization | Complete |
-| 3 | Orchestrator (multi-query) | Complete |
-| 4 | UI Polish | Complete |
-| 5 | Production Harness | In Progress |
+Where things stand and what's next: [`STATUS.md`](STATUS.md). Keep status there, not here.
 
 ### What's done
 - **Phase 1**: `src/data/` (DuckDB connection, schema introspection, loader), `src/agent/query_agent.py` (LLM SQL gen, 2-attempt retry, domain classification, validation), full dbt mart structure (`core/`, `equity/`, `sector/`, `risk/`), Dagster ingestion + dbt assets
@@ -28,15 +22,6 @@ executes it against DuckDB, and returns an annotated visual + prose narrative �
 - **Phase 5 (partial)**: Answer quality hardening (28 eval fixtures, follow-up constraints, live news context via yfinance); Observability layer (`src/observability/` — SQLite WAL write store, request ID propagation, all 5 pipeline stages logged: `decompose`, `sql_gen`, `sql_exec`, `narrative`, `news`; domain propagated at request + span level); Dagster ELT pipeline (SQLite + Dagster run history → DuckDB `raw_observability` schema → 5 dbt analytical marts); event-based sensors replacing all cron schedules; `dbt_test_runner` asset writes test results directly to DuckDB after each ingest; eval runner tags fixture runs with `eval_{fixture_id}` prefix so prod and eval telemetry are queryable side-by-side; Docker Compose phase 1 (`Dockerfile` + `Dockerfile.gateway` + `docker-compose.yml`) containerises FastAPI + Go gateway + Streamlit; `host.docker.internal` bridges to local Ollama until phase 2; contextual knowledge base (dbt docs sensor, few-shot injection via `learned_patterns.yaml`); Docker Compose phase 2 (Ollama + Dagster webserver/daemon services); schema-level SQL guards (Guards 1-3 in `query_agent._validate_schema`) cutting first-attempt failures for sector snapshot misuse, pctile hallucination, and avg_drawdown on risk mart — 27/28 eval fixtures passing, 290 unit tests, 82% coverage
 - **Phase 5 (eval harness round 2, branch `feature/eval-harness-round2`)**: Expanded eval suite to 45 fixtures (was 28); narrative agent improvements (multi-sector color inference, scatter keyword detection, x/y inference fixes); SQL prompt scatter/correlation guidance; Guard 5 (unqualified unknown table names); 11 learned patterns with domain priority ordering; `mart_eval_runs` observability feedback loop — **37/45 passing**, 8 remaining failures are local model ceiling (see model notes below)
 - **Phase 5 (ORACLE patterns, branch `feature/oracle-patterns`)**: Four architectural improvements from the ORACLE multi-agent spec: (1) `DomainClassification(domains, confidence)` return from `classify_domains()` — confidence logged to `sql_gen` spans; (2) `RequestState` shared state object in orchestrator — `classify_domains()` called once per request; (3) `scripts/promote_patterns.py` + Dagster `pattern_promotion` asset — auto-surfaces consistently-failing eval fixtures as candidates in `pattern_candidates.yaml` (human-reviewed before promotion to `learned_patterns.yaml`); (4) `src/observability/kpis.py` — 5 KPI targets with `evaluate_kpis()` + Dagster `kpi_health_check` + `just kpis`
-
-### What's next (Phase 5 remaining)
-- **Model ceiling**: 8 fixtures blocked by `qwen2.5-coder:3b` limits — see **Local model capability ceiling** section below; switch to `SCOUTER_LLM_PROVIDER=anthropic` to clear all 8
-- **Chart x_col/y_col scorer validation**: Go scorer validates chart presence but not column sensibility — `assignments/active/eval_harness_round2.md` Task 3
-- **Domain-specific fallback SQL**: replace single generic fallback with per-domain templates so model failures produce useful data, not empty results
-- News → tool-calling: upgrade when using Anthropic provider (qwen2.5 tool support is unreliable)
-
-**Active work**: `assignments/active/`
-**Completed reference**: `assignments/completed/`
 
 ## Architecture
 
